@@ -36,9 +36,11 @@ export DEBIAN_FRONTEND=noninteractive
 step "Installing system components…"
 run apt-get update -qq
 # Core runtime + RTL-SDR library/tools + wifi tooling. Quiet, unattended.
+# network-manager powers the Wi-Fi/ethernet admin tab. vcgencmd (throttle
+# status) ships with Raspberry Pi OS already, so it is not installed here.
 run apt-get install -y -qq --no-install-recommends \
     python3 python3-venv python3-pip git rsync unzip \
-    librtlsdr0 rtl-sdr usbutils iw
+    librtlsdr0 rtl-sdr usbutils iw network-manager
 
 # Ensure the DVB kernel driver doesn't grab the RTL-SDR (standard SDR setup).
 if [[ ! -f /etc/modprobe.d/dronedingo-rtlsdr.conf ]]; then

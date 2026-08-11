@@ -173,13 +173,22 @@
 
           <!-- SYSTEM -->
           <section class="admin-pane" data-pane="system">
-            <div class="stat-grid" id="sysStats">
-              <div class="stat"><span class="stat-lbl">Service</span><span class="stat-val" id="sSvc">—</span></div>
-              <div class="stat"><span class="stat-lbl">Uptime</span><span class="stat-val" id="sUptime">—</span></div>
-              <div class="stat"><span class="stat-lbl">CPU load</span><span class="stat-val" id="sLoad">—</span></div>
-              <div class="stat"><span class="stat-lbl">CPU temp</span><span class="stat-val" id="sTemp">—</span></div>
-              <div class="stat"><span class="stat-lbl">Memory</span><span class="stat-val" id="sMem">—</span></div>
-              <div class="stat"><span class="stat-lbl">Disk</span><span class="stat-val" id="sDisk">—</span></div>
+            <dl class="sys-facts">
+              <div><dt>Hostname</dt><dd id="sHost">—</dd></div>
+              <div><dt>Pi model</dt><dd id="sModel">—</dd></div>
+              <div><dt>Uptime</dt><dd id="sUptime">—</dd></div>
+              <div><dt>Service</dt><dd id="sSvc">—</dd></div>
+            </dl>
+            <div id="sThrottle" class="throttle" hidden></div>
+            <div class="bars">
+              <div class="bar-row"><span class="bar-lbl">Memory</span>
+                <div class="bar"><span id="sMemBar"></span></div><span class="bar-val" id="sMem">—</span></div>
+              <div class="bar-row"><span class="bar-lbl">CPU load</span>
+                <div class="bar"><span id="sLoadBar"></span></div><span class="bar-val" id="sLoad">—</span></div>
+              <div class="bar-row"><span class="bar-lbl">CPU temp</span>
+                <div class="bar"><span id="sTempBar"></span></div><span class="bar-val" id="sTemp">—</span></div>
+              <div class="bar-row"><span class="bar-lbl">Disk</span>
+                <div class="bar"><span id="sDiskBar"></span></div><span class="bar-val" id="sDisk">—</span></div>
             </div>
             <div class="modal-actions">
               <button class="btn ghost" id="btnRefreshSys">Refresh</button>
@@ -191,6 +200,30 @@
           <section class="admin-pane" data-pane="network">
             <h3 class="pane-h">Interfaces</h3>
             <div id="netInterfaces" class="net-list"><p class="muted small">Loading…</p></div>
+
+            <h3 class="pane-h">Ethernet</h3>
+            <div class="coord-row">
+              <label>Interface
+                <select id="ethIface"></select></label>
+              <label>Addressing
+                <select id="ethMode">
+                  <option value="dhcp">Automatic (DHCP)</option>
+                  <option value="static">Static IP</option>
+                </select></label>
+            </div>
+            <div id="ethStatic" hidden>
+              <label>IP address / prefix
+                <input type="text" id="ethIp" placeholder="192.168.1.50/24" /></label>
+              <div class="coord-row">
+                <label>Gateway <input type="text" id="ethGw" placeholder="192.168.1.1" /></label>
+                <label>DNS <input type="text" id="ethDns" placeholder="1.1.1.1" /></label>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn primary" id="btnEthApply">Apply</button>
+            </div>
+            <p class="muted small" id="ethStatus"></p>
+
             <h3 class="pane-h">Wi-Fi</h3>
             <p class="muted small" id="wifiCurrent">—</p>
             <div id="wifiList" class="net-list"></div>
@@ -219,6 +252,8 @@
             <pre class="update-log" id="updateLog" hidden></pre>
 
             <h3 class="pane-h">Operating system</h3>
+            <p class="muted small">Runs <code>apt update</code> to check and
+              <code>apt full-upgrade</code> to install.</p>
             <p class="muted small" id="osUpdateStatus">Not checked.</p>
             <div class="modal-actions">
               <button class="btn ghost" id="btnCheckOS">Check OS updates</button>

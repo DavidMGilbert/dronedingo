@@ -32,6 +32,26 @@ case "$verb" in
     fi
     ;;
 
+  net-dhcp)
+    iface="${1:?iface required}"
+    con="$(nmcli -t -g GENERAL.CONNECTION device show "$iface" 2>/dev/null || true)"
+    [[ -z "$con" ]] && con="dronedingo-$iface"
+    nmcli con mod "$con" ipv4.method auto ipv4.gateway "" ipv4.addresses "" \
+      ipv4.dns "" 2>/dev/null || nmcli con add type ethernet ifname "$iface" con-name "$con"
+    nmcli con up "$con"
+    ;;
+
+  net-static)
+    iface="${1:?iface required}"; addr="${2:?addr required}"
+    gw="${3:-}"; dns="${4:-}"
+    con="$(nmcli -t -g GENERAL.CONNECTION device show "$iface" 2>/dev/null || true)"
+    [[ -z "$con" ]] && { con="dronedingo-$iface"; nmcli con add type ethernet ifname "$iface" con-name "$con"; }
+    nmcli con mod "$con" ipv4.method manual ipv4.addresses "$addr"
+    [[ -n "$gw" ]]  && nmcli con mod "$con" ipv4.gateway "$gw"
+    [[ -n "$dns" ]] && nmcli con mod "$con" ipv4.dns "$dns"
+    nmcli con up "$con"
+    ;;
+
   os-check)
     apt-get update -qq >/dev/null 2>&1 || true
     # List upgradable packages, one per line (exclude the header line).
@@ -41,7 +61,7 @@ case "$verb" in
   os-upgrade)
     export DEBIAN_FRONTEND=noninteractive
     apt-get update -qq
-    apt-get upgrade -y -qq
+    apt-get full-upgrade -y -qq
     apt-get autoremove -y -qq || true
     echo "OS upgrade complete."
     ;;

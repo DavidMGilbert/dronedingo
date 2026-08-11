@@ -78,6 +78,46 @@ def _uptime() -> float | None:
     return float(up.split()[0]) if up else None
 
 
+def _pi_model() -> str | None:
+    # Device-tree model, e.g. "Raspberry Pi 5 Model B Rev 1.0".
+    for path in ("/sys/firmware/devicetree/base/model",
+                 "/proc/device-tree/model"):
+        m = _read(path)
+        if m:
+            return m.replace("\x00", "").strip()
+    return None
+
+
+# vcgencmd get_throttled bit meanings (now / since-boot).
+_THROTTLE_BITS = [
+    (0, "Under-voltage detected", True),
+    (1, "ARM frequency capped", True),
+    (2, "Currently throttled", True),
+    (3, "Soft temperature limit active", True),
+    (16, "Under-voltage has occurred", False),
+    (17, "ARM frequency capping has occurred", False),
+    (18, "Throttling has occurred", False),
+    (19, "Soft temperature limit has occurred", False),
+]
+
+
+def _throttle() -> dict | None:
+    """Decode `vcgencmd get_throttled` into human-readable flags (Pi only)."""
+    rc, out = _run(["vcgencmd", "get_throttled"], timeout=5)
+    if rc != 0 or "throttled=" not in out:
+        return None
+    try:
+        value = int(out.strip().split("throttled=")[1], 16)
+    except (ValueError, IndexError):
+        return None
+    active_now, since_boot = [], []
+    for bit, label, is_now in _THROTTLE_BITS:
+        if value & (1 << bit):
+            (active_now if is_now else since_boot).append(label)
+    return {"value": f"0x{value:x}", "healthy": value == 0,
+            "active_now": active_now, "since_boot": since_boot}
+
+
 def _service_active(name: str = "dronedingo") -> str:
     rc, out = _run(["systemctl", "is-active", name], timeout=5)
     out = out.strip()
@@ -96,6 +136,7 @@ def status() -> dict:
         pass
     return {
         "hostname": socket.gethostname(),
+        "pi_model": _pi_model(),
         "time": time.time(),
         "uptime_s": _uptime(),
         "load": load,
@@ -104,6 +145,7 @@ def status() -> dict:
         "memory": _mem(),
         "disk": {"total": disk.total, "used": disk.used,
                  "percent": round(disk.used / disk.total * 100, 1)},
+        "throttle": _throttle(),
         "service": _service_active(),
     }
 
@@ -198,6 +240,27 @@ def wifi_connect(ssid: str, password: str, iface: str | None = None) -> dict:
     res.setdefault("message",
                    "Connected." if res.get("ok") else "Could not connect.")
     return res
+
+
+def configure_ethernet(iface: str, mode: str, ip: str = "", gateway: str = "",
+                       dns: str = "") -> dict:
+    """Set an ethernet interface to DHCP or a static address (via nmcli)."""
+    if not iface:
+        return {"ok": False, "message": "Interface required."}
+    if mode == "dhcp":
+        res = _helper("net-dhcp", iface, timeout=40)
+        res.setdefault("message", "Switched to DHCP." if res.get("ok")
+                       else "Could not apply DHCP.")
+        return res
+    if mode == "static":
+        if not ip or "/" not in ip:
+            return {"ok": False, "message": "Static needs an address as IP/prefix "
+                    "(e.g. 192.168.1.50/24)."}
+        res = _helper("net-static", iface, ip, gateway or "", dns or "", timeout=40)
+        res.setdefault("message", "Static address applied." if res.get("ok")
+                       else "Could not apply static address.")
+        return res
+    return {"ok": False, "message": f"Unknown mode: {mode}"}
 
 
 def os_update_check() -> dict:

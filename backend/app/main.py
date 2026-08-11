@@ -308,6 +308,14 @@ async def api_wifi_connect(payload: dict):
         payload.get("password", ""), payload.get("iface"))
 
 
+@app.post("/api/system/ethernet")
+async def api_ethernet(payload: dict):
+    return await asyncio.to_thread(
+        system.configure_ethernet, payload.get("iface", ""),
+        payload.get("mode", "dhcp"), payload.get("ip", ""),
+        payload.get("gateway", ""), payload.get("dns", ""))
+
+
 @app.post("/api/system/reboot")
 async def api_system_reboot():
     return await asyncio.to_thread(system.reboot)

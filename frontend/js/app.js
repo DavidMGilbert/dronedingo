@@ -464,20 +464,55 @@
     const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
     return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
   };
+  function setBar(id, pct, warnAt, hotAt) {
+    const el = $(id); if (!el) return;
+    const p = Math.max(0, Math.min(100, pct || 0));
+    el.style.width = p + "%";
+    el.classList.toggle("warn", hotAt ? p >= warnAt && p < hotAt : p >= warnAt);
+    if (hotAt) el.classList.toggle("hot", p >= hotAt);
+  }
   async function loadSystem() {
     try {
       const s = await (await fetch("/api/system/status")).json();
-      $("sSvc").textContent = s.service || "—";
-      $("sSvc").classList.toggle("warn", s.service !== "active");
+      $("sHost").textContent = s.hostname || "—";
+      $("sModel").textContent = s.pi_model || "—";
       $("sUptime").textContent = fmtUptime(s.uptime_s);
-      $("sLoad").textContent = s.load ? s.load.join("  ") : "—";
-      $("sTemp").textContent = s.cpu_temp_c != null ? s.cpu_temp_c + " °C" : "—";
-      $("sTemp").classList.toggle("warn", (s.cpu_temp_c || 0) >= 75);
+      $("sSvc").textContent = s.service || "—";
+      $("sSvc").style.color = s.service === "active" ? "var(--accent-alt)"
+        : (s.service === "n/a" ? "" : "var(--danger)");
+
+      // Throttle banner (Pi-only).
+      const t = s.throttle, tb = $("sThrottle");
+      if (!t) { tb.hidden = true; }
+      else if (t.healthy) {
+        tb.hidden = false; tb.className = "throttle ok";
+        tb.textContent = "Power & thermal healthy — no throttling.";
+      } else {
+        tb.hidden = false; tb.className = "throttle warn";
+        const now = t.active_now.map((x) => `<b>${esc(x)}</b>`);
+        const past = t.since_boot.map((x) => esc(x));
+        tb.innerHTML = [...now, ...past].join("<br>")
+          || "Throttling flags set (" + esc(t.value) + ")";
+      }
+
+      // Bars.
+      const mem = s.memory && s.memory.total ? s.memory.percent : 0;
+      setBar("sMemBar", mem, 75, 90);
       $("sMem").textContent = s.memory && s.memory.total
-        ? `${s.memory.percent}% of ${fmtBytes(s.memory.total)}` : "—";
+        ? `${mem}% of ${fmtBytes(s.memory.total)}` : "—";
+
+      const loadPct = s.load && s.cpu_count ? (s.load[0] / s.cpu_count) * 100 : 0;
+      setBar("sLoadBar", loadPct, 70, 100);
+      $("sLoad").textContent = s.load ? s.load.join("  ") : "—";
+
+      const temp = s.cpu_temp_c || 0;
+      setBar("sTempBar", (temp / 85) * 100, 65 / 85 * 100, 80 / 85 * 100);
+      $("sTemp").textContent = s.cpu_temp_c != null ? s.cpu_temp_c + " °C" : "—";
+
       const d = s.disk;
-      $("sDisk").textContent = d ? `${d.percent}% of ${fmtBytes(d.total)}` : "—";
-      $("sDisk").classList.toggle("warn", (d && d.percent) >= 90);
+      setBar("sDiskBar", d ? d.percent : 0, 80, 92);
+      $("sDisk").textContent = d
+        ? `${d.percent}% — ${fmtBytes(d.used)} of ${fmtBytes(d.total)}` : "—";
     } catch (_) {}
   }
   async function doReboot() {
@@ -492,15 +527,40 @@
       const n = await (await fetch("/api/system/network")).json();
       const box = $("netInterfaces");
       box.innerHTML = n.interfaces.length ? "" : '<p class="muted small">No interfaces reported (Linux-only).</p>';
+      const ethSel = $("ethIface"); ethSel.innerHTML = "";
       for (const itf of n.interfaces) {
         const row = document.createElement("div"); row.className = "net-row";
         row.innerHTML = `<span><span class="ssid">${esc(itf.name)}</span> `
           + `<span class="meta">${esc(itf.type)} · ${itf.state}</span></span>`
           + `<span class="meta">${esc((itf.addresses || []).join(", ") || "—")}</span>`;
         box.appendChild(row);
+        if (itf.type === "ethernet") {
+          const o = document.createElement("option");
+          o.value = itf.name; o.textContent = itf.name; ethSel.appendChild(o);
+        }
+      }
+      if (!ethSel.children.length) {
+        const o = document.createElement("option"); o.textContent = "No ethernet"; o.value = "";
+        ethSel.appendChild(o);
       }
       $("wifiCurrent").textContent = n.wifi ? `Connected: ${n.wifi.name}` : "Not connected to Wi-Fi.";
     } catch (_) {}
+  }
+  async function applyEthernet() {
+    const body = {
+      iface: $("ethIface").value, mode: $("ethMode").value,
+      ip: $("ethIp").value.trim(), gateway: $("ethGw").value.trim(),
+      dns: $("ethDns").value.trim(),
+    };
+    const el = $("ethStatus"); el.textContent = "Applying…";
+    try {
+      const r = await (await fetch("/api/system/ethernet", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body) })).json();
+      el.className = "small " + (r.ok ? "alert-ok" : "alert-off");
+      el.textContent = r.message || (r.ok ? "Applied." : "Failed.");
+      if (r.ok) loadNetwork();
+    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed."; }
   }
   async function wifiScan() {
     const list = $("wifiList"); list.innerHTML = '<p class="muted small">Scanning…</p>';
@@ -666,6 +726,8 @@
     $("btnWifiScan").onclick = wifiScan;
     $("btnWifiJoin").onclick = wifiJoin;
     $("btnWifiCancel").onclick = () => { $("wifiConnect").hidden = true; };
+    $("btnEthApply").onclick = applyEthernet;
+    $("ethMode").onchange = () => { $("ethStatic").hidden = $("ethMode").value !== "static"; };
     // updates
     $("btnCheckUpdate").onclick = checkUpdate;
     $("btnInstallUpdate").onclick = installUpdate;
