@@ -87,6 +87,20 @@ sudo bash /opt/dronedingo/deploy/monitor-mode.sh wlan1
 # RTL-SDR presence: auto-enabled by the installer if a dongle is detected
 ```
 
+## Admin login
+
+The dashboard is gated behind an **admin email + password**. Set them at install
+time (the installer prompts, or pass `DRONEDINGO_ADMIN_EMAIL` /
+`DRONEDINGO_ADMIN_PASSWORD`); if you skip it, the first web visit prompts you to
+create the admin account. Change email/password later in **Settings → Account**.
+
+**Locked out?** There is no web reset by design — recover from the Pi console:
+
+```bash
+sudo bash /opt/dronedingo/deploy/reset-admin.sh          # set a new email/password
+sudo bash /opt/dronedingo/deploy/reset-admin.sh --clear  # wipe → set up again in the browser
+```
+
 ## Self-test
 
 ```bash

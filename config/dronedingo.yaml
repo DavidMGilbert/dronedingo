@@ -99,8 +99,11 @@ updates:
   branch: "main"                     # git fallback when check_url is null (dev)
 
 auth:
-  # The web UI is gated behind a login. On first visit you set the admin
-  # password; it is stored hashed (PBKDF2) in data/state.json, never here.
+  # The web UI is gated behind an admin email + password login. Credentials are
+  # set at installation (installer prompt or DRONEDINGO_ADMIN_EMAIL/_PASSWORD),
+  # or on first web visit if none were provided. They are stored hashed
+  # (PBKDF2) in data/state.json, never here. Locked out? Reset from the Pi
+  # console: sudo bash /opt/dronedingo/deploy/reset-admin.sh
   enabled: true
   session_hours: 168         # how long a login stays valid
 

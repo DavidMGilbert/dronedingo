@@ -175,14 +175,24 @@ h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin: 
 
 .map-legend {
   position: absolute; bottom: 12px; left: 12px; z-index: 450;
-  background: rgba(17, 24, 35, .85); border: 1px solid var(--line);
-  border-radius: 8px; padding: 8px 10px; display: flex; gap: 14px; font-size: 11px;
-  backdrop-filter: blur(4px);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--text); border: 1px solid var(--line);
+  border-radius: 9px; padding: 7px 11px; display: flex; align-items: center;
+  gap: 14px; font-size: 12px; box-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
 }
-.map-legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
-.swatch.drone { background: var(--accent); }
-.swatch.operator { background: var(--accent-alt); }
-.swatch.home { background: var(--home); }
+.lg-item { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.lg-item svg { width: 16px; height: 16px; }        /* icon colour set below */
+.lg-item svg .fill { fill: currentColor; }
+.lg-item svg line { stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.lg-drone svg { color: var(--accent); }            /* only the glyph is tinted */
+.lg-op    svg { color: var(--accent-alt); }
+.lg-home  svg { color: var(--home); }
+.lg-basemap {
+  padding-left: 12px; border-left: 1px solid var(--line);
+  color: var(--muted); font-size: 11px;
+}
+.lg-basemap.offline-ok { color: var(--accent-alt); }
 
 /* Map markers (MapLibre custom elements) */
 .drone-marker {

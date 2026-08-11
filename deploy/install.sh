@@ -133,6 +133,37 @@ run "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
 mkdir -p "$APP_DIR/data"
 
+step "Configuring admin login…"
+# Set the admin email + password now. Priority: environment vars (for automated
+# provisioning) -> interactive prompt -> defer to first web visit.
+set_admin_creds() {
+  DD_E="$1" DD_P="$2" DD_APP="$APP_DIR" "$APP_DIR/.venv/bin/python" - >>"$LOG" 2>&1 <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["DD_APP"], "backend"))
+from app import auth
+auth.set_credentials(os.environ["DD_E"], os.environ["DD_P"])
+PYEOF
+}
+if [[ -n "${DRONEDINGO_ADMIN_EMAIL:-}" && -n "${DRONEDINGO_ADMIN_PASSWORD:-}" ]]; then
+  if set_admin_creds "$DRONEDINGO_ADMIN_EMAIL" "$DRONEDINGO_ADMIN_PASSWORD"; then
+    step "  • Admin login set from environment ($DRONEDINGO_ADMIN_EMAIL)."
+  else
+    step "  • Env credentials rejected — set them on first web visit."
+  fi
+elif [[ -t 0 ]]; then
+  read -rp  "    Admin email: " _ADMIN_EMAIL
+  read -rsp "    Admin password (min 8 chars): " _ADMIN_PASS; echo
+  if [[ -n "$_ADMIN_EMAIL" && -n "$_ADMIN_PASS" ]] \
+       && set_admin_creds "$_ADMIN_EMAIL" "$_ADMIN_PASS"; then
+    step "  • Admin login set."
+  else
+    step "  • Skipped — set the admin login on first web visit."
+  fi
+  unset _ADMIN_PASS
+else
+  step "  • No credentials given — you'll set the admin login on first web visit."
+fi
+
 step "Detecting attached hardware…"
 enable_src() { run "$APP_DIR/.venv/bin/python" -c \
   "import sys; sys.path.insert(0,'$APP_DIR/backend'); from app import config; config.set_source_enabled('$1', True)"; }

@@ -8,7 +8,14 @@
 window.DDMap = (() => {
   "use strict";
 
-  const DRONE_SVG = '<svg class="glyph" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 4.8L20 8l-3.6 3.2L17 17l-5-2.6L7 17l.6-5.8L4 8l5.6-1.2z"/></svg>';
+  // Top-down quadcopter; the nose (triangle at top) makes heading rotation read.
+  const DRONE_SVG = '<svg class="glyph" viewBox="0 0 24 24" fill="currentColor">'
+    + '<path d="M12 2.6l1.6 3H10.4z"/>'
+    + '<line x1="7" y1="7" x2="17" y2="17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '<line x1="17" y1="7" x2="7" y2="17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '<circle cx="5.6" cy="5.6" r="2.7"/><circle cx="18.4" cy="5.6" r="2.7"/>'
+    + '<circle cx="5.6" cy="18.4" r="2.7"/><circle cx="18.4" cy="18.4" r="2.7"/>'
+    + '<rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.5"/></svg>';
   const OP_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="12" cy="7" r="3.4"/><path d="M4.5 20c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5z"/></svg>';
 
   let map = null;

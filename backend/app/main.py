@@ -92,14 +92,19 @@ def _is_public(path: str) -> bool:
 
 
 async def _auth_guard(request: Request, call_next):
-    if not _AUTH_ENABLED or _is_public(request.url.path):
-        return await call_next(request)
-    if request.session.get("uid"):
-        return await call_next(request)
-    # Unauthenticated: APIs get 401, page requests get redirected to login.
-    if request.url.path.startswith(("/api/", "/tiles/")):
-        return JSONResponse({"error": "authentication required"}, status_code=401)
-    return RedirectResponse("/login")
+    path = request.url.path
+    # Gate first: unauthenticated APIs get 401, pages redirect to login.
+    if _AUTH_ENABLED and not _is_public(path) and not request.session.get("uid"):
+        if path.startswith(("/api/", "/tiles/")):
+            return JSONResponse({"error": "authentication required"}, status_code=401)
+        return RedirectResponse("/login")
+    response = await call_next(request)
+    # App HTML/JS/CSS must always revalidate, so a self-update reaches browsers
+    # immediately (StaticFiles' ETag then serves 304 when unchanged). Vendored
+    # libraries/fonts keep their default long-lived caching.
+    if path in ("/", "/login") or path.startswith(("/js/", "/css/")):
+        response.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return response
 
 
 # Middleware order matters: the LAST added runs OUTERMOST. SessionMiddleware
@@ -121,19 +126,20 @@ async def api_auth_status(request: Request):
 
 @app.post("/api/auth/login")
 async def api_auth_login(request: Request, payload: dict):
+    email = payload.get("email", "")
     password = payload.get("password", "")
-    # First run: no password set yet — this call creates the admin password.
+    # First run: no admin yet — this call creates the admin credentials.
     if not auth.is_configured():
         try:
-            auth.set_password(password)
+            auth.set_credentials(email, password)
         except ValueError as exc:
             return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-        request.session["uid"] = "admin"
+        request.session["uid"] = auth.get_email()
         return {"ok": True, "created": True}
-    if auth.verify(password):
-        request.session["uid"] = "admin"
+    if auth.verify(email, password):
+        request.session["uid"] = auth.get_email()
         return {"ok": True}
-    return JSONResponse({"ok": False, "error": "Incorrect password."},
+    return JSONResponse({"ok": False, "error": "Incorrect email or password."},
                         status_code=401)
 
 
@@ -143,12 +149,27 @@ async def api_auth_logout(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/auth/whoami")
+async def api_auth_whoami(request: Request):
+    return {"email": request.session.get("uid")}
+
+
 @app.post("/api/auth/password")
 async def api_auth_password(request: Request, payload: dict):
     try:
         auth.change_password(payload.get("current", ""), payload.get("new", ""))
     except (PermissionError, ValueError) as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return {"ok": True}
+
+
+@app.post("/api/auth/email")
+async def api_auth_email(request: Request, payload: dict):
+    try:
+        auth.change_email(payload.get("email", ""), payload.get("password", ""))
+    except (PermissionError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    request.session["uid"] = auth.get_email()
     return {"ok": True}
 
 

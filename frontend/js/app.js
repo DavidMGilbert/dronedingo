@@ -416,6 +416,27 @@
     else if (name === "system") loadSystem();
     else if (name === "network") loadNetwork();
     else if (name === "updates") checkUpdate();
+    else if (name === "about") loadAbout();
+    else if (name === "account") loadAccount();
+  }
+
+  async function loadAccount() {
+    try {
+      const w = await (await fetch("/api/auth/whoami")).json();
+      $("acctEmail").textContent = w.email || "—";
+    } catch (_) {}
+  }
+  async function changeEmail() {
+    const el = $("emStatus");
+    try {
+      const r = await fetch("/api/auth/email", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: $("emNew").value, password: $("emPass").value }) });
+      const d = await r.json();
+      el.className = "small " + (d.ok ? "alert-ok" : "alert-off");
+      el.textContent = d.ok ? "Email updated." : (d.error || "Failed.");
+      if (d.ok) { $("emPass").value = ""; loadAccount(); }
+    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed."; }
   }
 
   /* ---- Alerts (editable) ---- */
@@ -659,9 +680,8 @@
     location.href = "/login";
   }
 
-  /* ---------------------------- About ---------------------------- */
-  async function openAbout() {
-    $("aboutModal").hidden = false;
+  /* ---------------------------- About (settings tab) ---------------------------- */
+  async function loadAbout() {
     try {
       const a = await (await fetch("/api/about")).json();
       renderWordmarkInto($("aboutName"), a.brand.product_name);
@@ -708,11 +728,6 @@
     $("btnCloseSettings").onclick = closeSettings;
     $("btnSaveHome").onclick = saveHome;
     $("btnTheme").onclick = toggleTheme;
-    $("btnAbout").onclick = openAbout;
-    $("btnCloseAbout").onclick = () => { $("aboutModal").hidden = true; };
-    $("aboutToUpdates").onclick = (e) => {
-      e.preventDefault(); $("aboutModal").hidden = true; openSettings("updates");
-    };
     // admin tabs
     document.querySelectorAll(".admin-tab").forEach((b) =>
       b.onclick = () => showTab(b.dataset.tab));
@@ -734,6 +749,7 @@
     $("btnCheckOS").onclick = checkOS;
     $("btnInstallOS").onclick = installOS;
     // account
+    $("btnChangeEmail").onclick = changeEmail;
     $("btnChangePw").onclick = changePassword;
     $("btnLogout").onclick = logout;
     $("btnUseMap").onclick = () => { state.pickingHome = true; $("settingsModal").hidden = true;

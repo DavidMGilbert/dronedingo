@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DroneDingo</title>
-  <link rel="stylesheet" href="/css/fonts.css" />
+  <link rel="stylesheet" href="/css/fonts.css?v=2" />
   <link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css" />
-  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/style.css?v=2" />
   <link rel="icon" type="image/png" sizes="32x32" href="/vendor/brand/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="64x64" href="/vendor/brand/favicon-64.png" />
   <link rel="apple-touch-icon" href="/vendor/brand/icon-180.png" />
@@ -41,7 +41,6 @@
         <span class="status-lbl">LOCAL</span>
       </div>
       <button class="icon-btn" id="btnTheme" title="Toggle light / dark">☀</button>
-      <button class="icon-btn" id="btnAbout" title="About">ⓘ</button>
       <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
     </div>
   </header>
@@ -72,10 +71,22 @@
     <section class="map-wrap">
       <div id="map"></div>
       <div class="map-legend">
-        <span><i class="swatch drone"></i>Drone</span>
-        <span><i class="swatch operator"></i>Operator</span>
-        <span><i class="swatch home"></i>Home Base</span>
-        <span class="legend-sep" id="basemapInfo"></span>
+        <span class="lg-item lg-drone">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <line x1="7" y1="7" x2="17" y2="17"/><line x1="17" y1="7" x2="7" y2="17"/>
+            <circle cx="6" cy="6" r="2.5" class="fill"/><circle cx="18" cy="6" r="2.5" class="fill"/>
+            <circle cx="6" cy="18" r="2.5" class="fill"/><circle cx="18" cy="18" r="2.5" class="fill"/>
+            <rect x="9.4" y="9.4" width="5.2" height="5.2" rx="1.4" class="fill"/>
+          </svg>Drone</span>
+        <span class="lg-item lg-op">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="8" r="3.4" class="fill"/>
+            <path class="fill" d="M5 20c0-4 3.2-6.4 7-6.4s7 2.4 7 6.4z"/>
+          </svg>Operator</span>
+        <span class="lg-item lg-home">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" class="fill"/></svg>
+          Home Base</span>
+        <span class="lg-basemap" id="basemapInfo"></span>
       </div>
     </section>
   </main>
@@ -121,6 +132,7 @@
           <button class="admin-tab" data-tab="network">Network</button>
           <button class="admin-tab" data-tab="updates">Updates</button>
           <button class="admin-tab" data-tab="account">Account</button>
+          <button class="admin-tab" data-tab="about">About</button>
         </nav>
 
         <div class="admin-panes">
@@ -264,6 +276,16 @@
 
           <!-- ACCOUNT -->
           <section class="admin-pane" data-pane="account">
+            <p class="muted small">Signed in as <b id="acctEmail">—</b></p>
+
+            <h3 class="pane-h">Change email</h3>
+            <label>New email <input type="email" id="emNew" autocomplete="username" placeholder="you@example.com" /></label>
+            <label>Confirm with password <input type="password" id="emPass" autocomplete="current-password" /></label>
+            <div class="modal-actions">
+              <button class="btn primary" id="btnChangeEmail">Update email</button>
+            </div>
+            <p class="muted small" id="emStatus"></p>
+
             <h3 class="pane-h">Change password</h3>
             <label>Current password <input type="password" id="pwCurrent" autocomplete="current-password" /></label>
             <label>New password <input type="password" id="pwNew" autocomplete="new-password" minlength="8" /></label>
@@ -271,51 +293,37 @@
               <button class="btn primary" id="btnChangePw">Update password</button>
             </div>
             <p class="muted small" id="pwStatus"></p>
+
             <div class="modal-section">
               <div class="modal-actions">
                 <button class="btn ghost" id="btnLogout">Sign out</button>
               </div>
             </div>
           </section>
+
+          <!-- ABOUT -->
+          <section class="admin-pane" data-pane="about">
+            <div class="about-brand">
+              <img class="about-logo" id="aboutLogo" src="/vendor/brand/mark.png" alt="" />
+              <div>
+                <div class="about-name" id="aboutName">DroneDingo</div>
+                <div class="about-tag" id="aboutTag">Your watchdog for the sky</div>
+              </div>
+            </div>
+            <dl class="about-facts">
+              <div><dt>Version</dt><dd id="aboutVersion">—</dd></div>
+              <div><dt>Build</dt><dd id="aboutBuild">—</dd></div>
+              <div><dt>Node</dt><dd id="aboutNode">—</dd></div>
+            </dl>
+            <p class="about-copyright" id="aboutCopyright"></p>
+          </section>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- ============================ ABOUT MODAL ============================ -->
-  <div class="modal-scrim" id="aboutModal" hidden>
-    <div class="modal about">
-      <div class="modal-head">
-        <h2>About</h2>
-        <button class="icon-btn" id="btnCloseAbout">✕</button>
-      </div>
-
-      <div class="about-brand">
-        <img class="about-logo" id="aboutLogo" src="/vendor/brand/mark.png" alt="" />
-        <div>
-          <div class="about-name" id="aboutName">DroneDingo</div>
-          <div class="about-tag" id="aboutTag">Your watchdog for the sky</div>
-        </div>
-      </div>
-
-      <dl class="about-facts">
-        <div><dt>Version</dt><dd id="aboutVersion">—</dd></div>
-        <div><dt>Build</dt><dd id="aboutBuild">—</dd></div>
-        <div><dt>Node</dt><dd id="aboutNode">—</dd></div>
-      </dl>
-      <p class="muted small about-updhint">Software &amp; OS updates are in
-        <a href="#" id="aboutToUpdates">Settings → Updates</a>.</p>
-
-      <div class="about-links">
-        <a href="/docs/legal" id="linkLegal" target="_blank" rel="noopener">Legal &amp; privacy</a>
-        <a href="/docs/notices" id="linkNotices" target="_blank" rel="noopener">Open-source notices</a>
-      </div>
-      <p class="about-copyright" id="aboutCopyright"></p>
     </div>
   </div>
 
   <script src="/vendor/maplibre/maplibre-gl.js"></script>
-  <script src="/js/map.js"></script>
-  <script src="/js/app.js"></script>
+  <script src="/js/map.js?v=2"></script>
+  <script src="/js/app.js?v=2"></script>
 </body>
 </html>
