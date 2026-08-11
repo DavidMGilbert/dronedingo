@@ -17,6 +17,27 @@
 }
 @font-face {
   font-family: "Barlow Condensed";
+  font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/vendor/fonts/barlowcondensed-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/vendor/fonts/barlowcondensed-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal; font-weight: 700; font-display: swap;
+  src: url("/vendor/fonts/barlowcondensed-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow Condensed";
   font-style: normal; font-weight: 800; font-display: swap;
   src: url("/vendor/fonts/barlowcondensed-800.woff2") format("woff2");
+}
+/* VFD-style glowing monospace for telemetry read-outs. */
+@font-face {
+  font-family: "Share Tech Mono";
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/vendor/fonts/sharetechmono-400.woff2") format("woff2");
 }

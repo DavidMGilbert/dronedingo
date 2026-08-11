@@ -1,329 +1,129 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="en-AU" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DroneDingo</title>
-  <link rel="stylesheet" href="/css/fonts.css?v=2" />
-  <link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css" />
-  <link rel="stylesheet" href="/css/style.css?v=2" />
   <link rel="icon" type="image/png" sizes="32x32" href="/vendor/brand/favicon-32.png" />
   <link rel="icon" type="image/png" sizes="64x64" href="/vendor/brand/favicon-64.png" />
   <link rel="apple-touch-icon" href="/vendor/brand/icon-180.png" />
   <link rel="manifest" href="/vendor/brand/site.webmanifest" />
-  <meta name="theme-color" content="#E8963C" />
+  <meta name="theme-color" content="#0c2224" />
+  <link rel="stylesheet" href="/css/fonts.css" />
+  <link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css" />
+  <link rel="stylesheet" href="/css/theme.css" />
+  <link rel="stylesheet" href="/css/clock.css" />
+  <link rel="stylesheet" href="/css/viewport.css" />
+  <link rel="stylesheet" href="/css/contrast.css" />
+  <link rel="stylesheet" href="/css/app-ui.css" />
 </head>
 <body>
-  <!-- ============================ HEADER ============================ -->
-  <header class="topbar">
-    <div class="brand">
-      <img class="brand-mark" src="/vendor/brand/mark.png" alt="DroneDingo" />
-      <div class="brand-text">
-        <span class="brand-name" id="brandName">DroneDingo</span>
-        <span class="brand-tag" id="brandTag">Your watchdog for the sky</span>
-      </div>
+<div class="app-shell">
+  <header class="topbar glass">
+    <a class="brand" href="#" aria-label="DroneDingo home">
+      <img class="brand-mark" src="/vendor/brand/mark.png" alt="" />
+      <span><strong>Drone<span>Dingo</span></strong><small id="tagline">Your watchdog for the sky</small></span>
+    </a>
+    <div class="system-summary">
+      <span><i class="live-dot" id="live-dot"></i><b id="link-text">CONNECTING</b></span>
+      <span><b id="contact-count">0</b> CONTACTS</span>
+      <span>NODE <b id="node-id">—</b></span>
+      <span class="vfd-clock" aria-label="Local date and time"><time id="clock">--:--:--</time><time id="current-date">—</time></span>
     </div>
-
-    <div class="status-cluster">
-      <div class="status-pill" id="linkPill">
-        <span class="dot"></span><span id="linkText">CONNECTING</span>
-      </div>
-      <div class="status-block">
-        <span class="status-num" id="activeCount">0</span>
-        <span class="status-lbl">CONTACTS</span>
-      </div>
-      <div class="status-block">
-        <span class="status-num" id="nodeId">—</span>
-        <span class="status-lbl">NODE</span>
-      </div>
-      <div class="status-block">
-        <span class="status-num" id="clock">--:--:--</span>
-        <span class="status-lbl">LOCAL</span>
-      </div>
-      <button class="icon-btn" id="btnTheme" title="Toggle light / dark">☀</button>
-      <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
-    </div>
+    <nav class="top-actions">
+      <button class="icon-button" id="sightings-open" aria-label="Open sighting log" title="Sighting log">↻</button>
+      <button class="icon-button" id="theme-toggle" aria-label="Change colour theme" title="Theme">☀</button>
+      <button class="icon-button" id="settings-open" aria-label="Open settings" title="Settings">⚙</button>
+    </nav>
   </header>
 
-  <!-- ============================ ALERT BANNER ============================ -->
-  <div class="alert-banner" id="alertBanner" hidden>
-    <span id="alertText"></span>
+  <div class="alert-strip" id="alert-strip" hidden>
+    <span class="alert-icon">▲</span><span id="alert-text"></span><time id="alert-time">NOW</time>
   </div>
 
-  <!-- ============================ BODY ============================ -->
-  <main class="layout">
-    <!-- Left: live contact list -->
-    <aside class="panel contacts" id="contactsPanel">
-      <div class="panel-head">
-        <h2>Active Contacts</h2>
-        <span class="muted" id="contactsEmpty">Scanning…</span>
-      </div>
-      <div class="contact-list" id="contactList"></div>
-
-      <div class="panel-head events-head">
-        <h2>Sighting Log</h2>
-        <button class="link-btn" id="btnRefreshEvents">refresh</button>
-      </div>
-      <div class="event-list" id="eventList"></div>
+  <div class="workspace">
+    <aside class="contacts-panel glass">
+      <div class="panel-heading"><strong>Active contacts</strong><span id="contacts-sub">Live</span></div>
+      <div id="contact-list"></div>
+      <div id="contacts-empty">Scanning…</div>
     </aside>
-
-    <!-- Centre: map -->
-    <section class="map-wrap">
+    <main class="map-panel" aria-label="Property map with live drone and operator positions">
       <div id="map"></div>
-      <div class="map-legend">
-        <span class="lg-item lg-drone">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <line x1="7" y1="7" x2="17" y2="17"/><line x1="17" y1="7" x2="7" y2="17"/>
-            <circle cx="6" cy="6" r="2.5" class="fill"/><circle cx="18" cy="6" r="2.5" class="fill"/>
-            <circle cx="6" cy="18" r="2.5" class="fill"/><circle cx="18" cy="18" r="2.5" class="fill"/>
-            <rect x="9.4" y="9.4" width="5.2" height="5.2" rx="1.4" class="fill"/>
-          </svg>Drone</span>
-        <span class="lg-item lg-op">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <circle cx="12" cy="8" r="3.4" class="fill"/>
-            <path class="fill" d="M5 20c0-4 3.2-6.4 7-6.4s7 2.4 7 6.4z"/>
-          </svg>Operator</span>
-        <span class="lg-item lg-home">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" class="fill"/></svg>
-          Home Base</span>
-        <span class="lg-basemap" id="basemapInfo"></span>
+      <div class="map-legend glass">
+        <span><i class="legend-drone"></i>Drone</span>
+        <span><i class="legend-operator"></i>Operator</span>
+        <span>⌂ Home base</span>
+        <span id="basemap-info"></span>
       </div>
-    </section>
-  </main>
+    </main>
+  </div>
 
-  <!-- ============================ PLAYBACK BAR ============================ -->
-  <footer class="playback">
-    <div class="pb-mode">
-      <button class="mode-btn active" id="btnLive">● LIVE</button>
-      <button class="mode-btn" id="btnReview">REVIEW</button>
-    </div>
-    <div class="pb-controls" id="pbControls" hidden>
-      <button class="icon-btn" id="btnPlay">▶</button>
-      <input type="range" id="scrubber" min="0" max="1000" value="1000" />
-      <span class="pb-time" id="pbTime">—</span>
-      <select id="pbSpeed" title="Playback speed">
-        <option value="1">1×</option>
-        <option value="4" selected>4×</option>
-        <option value="16">16×</option>
-        <option value="60">60×</option>
+  <footer class="modebar glass">
+    <button class="active" data-mode="live" id="mode-live">LIVE</button>
+    <button data-mode="review" id="mode-review">REVIEW</button>
+    <div class="pb" id="pb" hidden>
+      <button class="pb-play" id="pb-play" aria-label="Play / pause">▶</button>
+      <input type="range" id="pb-scrub" min="0" max="1000" value="1000" />
+      <span class="pb-time" id="pb-time">—</span>
+      <select id="pb-speed" title="Playback speed">
+        <option value="1">1×</option><option value="4" selected>4×</option>
+        <option value="16">16×</option><option value="60">60×</option>
       </select>
-      <select id="pbWindow" title="Review window">
-        <option value="900">Last 15 min</option>
-        <option value="3600" selected>Last hour</option>
-        <option value="21600">Last 6 hours</option>
-        <option value="86400">Last 24 hours</option>
+      <select id="pb-window" title="Review window">
+        <option value="900">15 min</option><option value="3600" selected>1 hour</option>
+        <option value="21600">6 hours</option><option value="86400">24 hours</option>
       </select>
     </div>
   </footer>
 
-  <!-- ============================ ADMIN PANEL ============================ -->
-  <div class="modal-scrim" id="settingsModal" hidden>
-    <div class="modal admin">
-      <div class="modal-head">
-        <h2>Settings</h2>
-        <button class="icon-btn" id="btnCloseSettings">✕</button>
+  <!-- ============================ MODALS ============================ -->
+  <div class="modal-layer" id="modal-layer" hidden>
+    <section class="modal glass" id="settings-modal" hidden aria-labelledby="settings-title">
+      <header class="modal-header"><h2 id="settings-title">Settings</h2>
+        <button class="icon-button close-modal" aria-label="Close">×</button></header>
+      <div class="settings-layout">
+        <nav class="settings-nav" id="settings-nav"></nav>
+        <div class="settings-content" id="settings-content"></div>
       </div>
+    </section>
 
-      <div class="admin-body">
-        <nav class="admin-nav" id="adminNav">
-          <button class="admin-tab active" data-tab="location">Location</button>
-          <button class="admin-tab" data-tab="alerts">Alerts</button>
-          <button class="admin-tab" data-tab="system">System</button>
-          <button class="admin-tab" data-tab="network">Network</button>
-          <button class="admin-tab" data-tab="updates">Updates</button>
-          <button class="admin-tab" data-tab="account">Account</button>
-          <button class="admin-tab" data-tab="about">About</button>
-        </nav>
+    <section class="modal glass" id="sightings-modal" hidden aria-labelledby="sightings-title">
+      <header class="modal-header">
+        <div><h2 id="sightings-title">Sighting log</h2><p>Recorded drone broadcasts and detection history</p></div>
+        <button class="icon-button close-modal" aria-label="Close">×</button>
+      </header>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Aircraft</th><th>First seen</th><th>Duration</th><th>Peak height</th><th>Hits</th></tr></thead>
+        <tbody id="sighting-rows"></tbody>
+      </table></div>
+      <footer class="pagination"><span id="page-caption"></span>
+        <div><button id="page-prev">Previous</button><button id="page-next">Next</button></div>
+      </footer>
+    </section>
 
-        <div class="admin-panes">
-          <!-- LOCATION -->
-          <section class="admin-pane active" data-pane="location">
-            <p class="muted">Set the receiver's location. Range and bearing to
-              every contact are measured from here. Click the map to drop the
-              marker, or type coordinates.</p>
-            <label>Label <input type="text" id="homeLabel" placeholder="Home Base" /></label>
-            <div class="coord-row">
-              <label>Latitude <input type="number" step="0.00001" id="homeLat" /></label>
-              <label>Longitude <input type="number" step="0.00001" id="homeLon" /></label>
-            </div>
-            <p class="muted small" id="homeHint">Tip: click anywhere on the map while this is open to pick a spot.</p>
-            <div class="modal-actions">
-              <button class="btn ghost" id="btnUseMap">Pick on map</button>
-              <button class="btn primary" id="btnSaveHome">Save location</button>
-            </div>
-          </section>
-
-          <!-- ALERTS -->
-          <section class="admin-pane" data-pane="alerts">
-            <p class="muted">Phone alerts fire when a drone comes within the
-              alert range of Home Base. Uses ntfy — free, no account.
-              <a href="/docs/alerts" target="_blank" rel="noopener">Setup guide</a></p>
-            <label>ntfy topic
-              <input type="text" id="aNtfyTopic" placeholder="dronedingo-yourfarm-7fq2p8xk" /></label>
-            <label>ntfy server
-              <input type="text" id="aNtfyServer" placeholder="https://ntfy.sh" /></label>
-            <label>Webhook URL (optional)
-              <input type="text" id="aWebhook" placeholder="https://…" /></label>
-            <div class="coord-row">
-              <label>Alert range (m)
-                <input type="number" id="aRing" min="10" step="10" /></label>
-              <label>Re-alert after (s)
-                <input type="number" id="aResight" min="0" step="30" /></label>
-            </div>
-            <div class="coord-row">
-              <label>Quiet hours
-                <input type="text" id="aQuiet" placeholder="22:00-06:00" /></label>
-              <label class="chk">
-                <input type="checkbox" id="aQuietSuppress" />
-                <span>Silence during quiet hours</span></label>
-            </div>
-            <div class="modal-actions">
-              <button class="btn ghost" id="btnTestAlert">Send test</button>
-              <button class="btn primary" id="btnSaveAlerts">Save alerts</button>
-            </div>
-            <p class="muted small" id="alertStatus"></p>
-          </section>
-
-          <!-- SYSTEM -->
-          <section class="admin-pane" data-pane="system">
-            <dl class="sys-facts">
-              <div><dt>Hostname</dt><dd id="sHost">—</dd></div>
-              <div><dt>Pi model</dt><dd id="sModel">—</dd></div>
-              <div><dt>Uptime</dt><dd id="sUptime">—</dd></div>
-              <div><dt>Service</dt><dd id="sSvc">—</dd></div>
-            </dl>
-            <div id="sThrottle" class="throttle" hidden></div>
-            <div class="bars">
-              <div class="bar-row"><span class="bar-lbl">Memory</span>
-                <div class="bar"><span id="sMemBar"></span></div><span class="bar-val" id="sMem">—</span></div>
-              <div class="bar-row"><span class="bar-lbl">CPU load</span>
-                <div class="bar"><span id="sLoadBar"></span></div><span class="bar-val" id="sLoad">—</span></div>
-              <div class="bar-row"><span class="bar-lbl">CPU temp</span>
-                <div class="bar"><span id="sTempBar"></span></div><span class="bar-val" id="sTemp">—</span></div>
-              <div class="bar-row"><span class="bar-lbl">Disk</span>
-                <div class="bar"><span id="sDiskBar"></span></div><span class="bar-val" id="sDisk">—</span></div>
-            </div>
-            <div class="modal-actions">
-              <button class="btn ghost" id="btnRefreshSys">Refresh</button>
-              <button class="btn danger" id="btnReboot">Reboot appliance</button>
-            </div>
-          </section>
-
-          <!-- NETWORK -->
-          <section class="admin-pane" data-pane="network">
-            <h3 class="pane-h">Interfaces</h3>
-            <div id="netInterfaces" class="net-list"><p class="muted small">Loading…</p></div>
-
-            <h3 class="pane-h">Ethernet</h3>
-            <div class="coord-row">
-              <label>Interface
-                <select id="ethIface"></select></label>
-              <label>Addressing
-                <select id="ethMode">
-                  <option value="dhcp">Automatic (DHCP)</option>
-                  <option value="static">Static IP</option>
-                </select></label>
-            </div>
-            <div id="ethStatic" hidden>
-              <label>IP address / prefix
-                <input type="text" id="ethIp" placeholder="192.168.1.50/24" /></label>
-              <div class="coord-row">
-                <label>Gateway <input type="text" id="ethGw" placeholder="192.168.1.1" /></label>
-                <label>DNS <input type="text" id="ethDns" placeholder="1.1.1.1" /></label>
-              </div>
-            </div>
-            <div class="modal-actions">
-              <button class="btn primary" id="btnEthApply">Apply</button>
-            </div>
-            <p class="muted small" id="ethStatus"></p>
-
-            <h3 class="pane-h">Wi-Fi</h3>
-            <p class="muted small" id="wifiCurrent">—</p>
-            <div id="wifiList" class="net-list"></div>
-            <div class="modal-actions">
-              <button class="btn ghost" id="btnWifiScan">Scan networks</button>
-            </div>
-            <div id="wifiConnect" hidden>
-              <label>Password for “<span id="wifiSsid"></span>”
-                <input type="password" id="wifiPass" /></label>
-              <div class="modal-actions">
-                <button class="btn ghost" id="btnWifiCancel">Cancel</button>
-                <button class="btn primary" id="btnWifiJoin">Connect</button>
-              </div>
-            </div>
-            <p class="muted small" id="netStatus"></p>
-          </section>
-
-          <!-- UPDATES -->
-          <section class="admin-pane" data-pane="updates">
-            <h3 class="pane-h">DroneDingo software</h3>
-            <p class="muted small" id="ddUpdateStatus">Checking…</p>
-            <div class="modal-actions">
-              <button class="btn ghost" id="btnCheckUpdate">Check now</button>
-              <button class="btn primary" id="btnInstallUpdate" hidden>Install update</button>
-            </div>
-            <pre class="update-log" id="updateLog" hidden></pre>
-
-            <h3 class="pane-h">Operating system</h3>
-            <p class="muted small">Runs <code>apt update</code> to check and
-              <code>apt full-upgrade</code> to install.</p>
-            <p class="muted small" id="osUpdateStatus">Not checked.</p>
-            <div class="modal-actions">
-              <button class="btn ghost" id="btnCheckOS">Check OS updates</button>
-              <button class="btn primary" id="btnInstallOS" hidden>Install OS updates</button>
-            </div>
-          </section>
-
-          <!-- ACCOUNT -->
-          <section class="admin-pane" data-pane="account">
-            <p class="muted small">Signed in as <b id="acctEmail">—</b></p>
-
-            <h3 class="pane-h">Change email</h3>
-            <label>New email <input type="email" id="emNew" autocomplete="username" placeholder="you@example.com" /></label>
-            <label>Confirm with password <input type="password" id="emPass" autocomplete="current-password" /></label>
-            <div class="modal-actions">
-              <button class="btn primary" id="btnChangeEmail">Update email</button>
-            </div>
-            <p class="muted small" id="emStatus"></p>
-
-            <h3 class="pane-h">Change password</h3>
-            <label>Current password <input type="password" id="pwCurrent" autocomplete="current-password" /></label>
-            <label>New password <input type="password" id="pwNew" autocomplete="new-password" minlength="8" /></label>
-            <div class="modal-actions">
-              <button class="btn primary" id="btnChangePw">Update password</button>
-            </div>
-            <p class="muted small" id="pwStatus"></p>
-
-            <div class="modal-section">
-              <div class="modal-actions">
-                <button class="btn ghost" id="btnLogout">Sign out</button>
-              </div>
-            </div>
-          </section>
-
-          <!-- ABOUT -->
-          <section class="admin-pane" data-pane="about">
-            <div class="about-brand">
-              <img class="about-logo" id="aboutLogo" src="/vendor/brand/mark.png" alt="" />
-              <div>
-                <div class="about-name" id="aboutName">DroneDingo</div>
-                <div class="about-tag" id="aboutTag">Your watchdog for the sky</div>
-              </div>
-            </div>
-            <dl class="about-facts">
-              <div><dt>Version</dt><dd id="aboutVersion">—</dd></div>
-              <div><dt>Build</dt><dd id="aboutBuild">—</dd></div>
-              <div><dt>Node</dt><dd id="aboutNode">—</dd></div>
-            </dl>
-            <p class="about-copyright" id="aboutCopyright"></p>
-          </section>
-        </div>
+    <section class="modal glass detail-modal" id="detail-modal" hidden aria-labelledby="detail-title">
+      <header class="modal-header">
+        <div><p class="modal-kicker">Detected aircraft</p><h2 id="detail-title">Aircraft details</h2></div>
+        <button class="icon-button close-modal" aria-label="Close">×</button>
+      </header>
+      <div class="identity-row">
+        <span class="large-drone-icon" id="detail-icon"></span>
+        <div><strong id="detail-name"></strong><small id="detail-id"></small></div>
+        <span class="distance-display" id="detail-distance"></span>
       </div>
-    </div>
+      <div class="detail-grid" id="detail-grid"></div>
+      <footer class="modal-actions">
+        <button id="detail-history">View sighting history</button>
+        <button class="primary close-modal">Done</button>
+      </footer>
+    </section>
   </div>
+</div>
 
-  <script src="/vendor/maplibre/maplibre-gl.js"></script>
-  <script src="/js/map.js?v=2"></script>
-  <script src="/js/app.js?v=2"></script>
+<script src="/vendor/maplibre/maplibre-gl.js"></script>
+<script src="/vendor/qr/qrcode.js"></script>
+<script src="/vendor/qr/dd-qr.js"></script>
+<script src="/js/map.js"></script>
+<script src="/js/app.js"></script>
 </body>
 </html>

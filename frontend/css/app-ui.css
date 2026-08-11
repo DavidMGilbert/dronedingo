@@ -1,0 +1,99 @@
+/* ==========================================================================
+   Glue between the concept's liquid-glass shell and the real appliance:
+   the live MapLibre map, markers restyled to the concept's glowing targets,
+   the logo image, and the review scrubber. Loaded after the concept CSS.
+   ========================================================================== */
+
+/* Real map fills the map panel; legend/controls float over it. */
+.map-panel { position: relative; }
+#map { position: absolute; inset: 0; background: var(--map, #102d2b); }
+.map-legend, .map-controls, .property-label { z-index: 6; }
+
+/* Logo mark (image) in place of the concept's CSS dingo. */
+.brand .brand-mark { height: 42px; width: auto; display: block; }
+@media (max-height: 760px) { .brand .brand-mark { height: 36px; } }
+
+/* Contacts panel helpers */
+#contacts-empty { padding: 10px 4px; color: var(--muted); font-size: 13px; }
+.contacts-panel .panel-heading span { text-transform: none; letter-spacing: 0; }
+#basemap-info { color: var(--muted); }
+#basemap-info.offline-ok { color: var(--vfd); }
+
+/* ---- MapLibre markers restyled to the concept's target look ---- */
+.drone-marker {
+  width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
+  display: grid; place-items: center;
+  background: var(--orange, #ed9800); color: #141a10;
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--orange, #ed9800) 15%, transparent),
+              0 0 22px color-mix(in srgb, var(--orange, #ed9800) 55%, transparent);
+  transition: background .2s;
+}
+.drone-marker .glyph { width: 20px; height: 20px; color: #141a10; transition: transform .3s linear; }
+.drone-marker.threat {
+  background: var(--danger, #ef5d61); color: #1a0e0e;
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--danger, #ef5d61) 18%, transparent),
+              0 0 22px color-mix(in srgb, var(--danger, #ef5d61) 60%, transparent);
+}
+.drone-marker.threat .glyph { color: #1a0e0e; }
+
+.op-marker {
+  display: grid; place-items: center; width: 22px; height: 22px;
+  color: var(--vfd, #68ead0);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--vfd, #68ead0) 55%, transparent));
+}
+.op-marker svg { width: 20px; height: 20px; fill: currentColor; }
+
+.home-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--home, #4E6BE6);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--home, #4E6BE6) 25%, transparent),
+              0 0 12px color-mix(in srgb, var(--home, #4E6BE6) 80%, transparent);
+}
+
+/* MapLibre chrome tuned to the glass theme */
+.maplibregl-ctrl-attrib, .maplibregl-ctrl-logo { display: none !important; }
+.maplibregl-ctrl-group {
+  background: var(--surface-solid) !important; border: 1px solid var(--glass-line) !important;
+  border-radius: 12px !important; overflow: hidden; box-shadow: 0 8px 20px var(--shadow) !important;
+}
+.maplibregl-ctrl-group button + button { border-top: 1px solid var(--line) !important; }
+.maplibregl-ctrl-group button span { filter: invert(1) brightness(1.4); }
+.maplibregl-popup-content {
+  background: var(--surface-solid); color: var(--text); border: 1px solid var(--glass-line);
+  border-radius: 10px; font-size: 12px; box-shadow: 0 10px 25px var(--shadow);
+}
+.maplibregl-popup-tip { display: none; }
+
+/* ---- Review scrubber in the modebar ---- */
+.modebar { gap: 12px; }
+.pb { display: flex; align-items: center; gap: 12px; flex: 1; max-width: 720px; }
+.pb[hidden] { display: none; }
+.pb button.pb-play {
+  width: 34px; height: 34px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface-soft); color: var(--text); cursor: pointer;
+}
+.pb input[type=range] { flex: 1; accent-color: var(--orange); }
+.pb .pb-time { font: 400 13px var(--font-vfd); color: var(--vfd); min-width: 68px; text-align: center; }
+.pb select {
+  padding: 6px 8px; border-radius: 9px; border: 1px solid var(--line);
+  background: var(--surface-soft); color: var(--text);
+}
+
+/* Settings extras that the concept CSS doesn't cover */
+.settings-content .status-note { margin-top: 8px; font-size: 12px; }
+.ok { color: var(--vfd); } .bad { color: var(--danger); }
+.net-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 11px; margin-bottom: 6px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface-soft);
+}
+.net-row .meta { color: var(--muted); font-size: 12px; }
+.update-log {
+  margin-top: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px;
+  background: var(--surface-soft); color: var(--muted); font: 11px/1.5 var(--font-vfd);
+  max-height: 150px; overflow: auto; white-space: pre-wrap;
+}
+.throttle-note { padding: 9px 11px; border-radius: 10px; margin: 4px 0 12px; font-size: 12px; }
+.throttle-note.ok { background: color-mix(in srgb, var(--vfd) 14%, transparent); }
+.throttle-note.warn { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--text); }
+.throttle-note.warn b { color: var(--danger); }

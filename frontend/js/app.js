@@ -1,36 +1,63 @@
 /* ====================================================================
-   DroneDingo — front-end controller
+   DroneDingo — front-end controller (liquid-glass shell + real backend).
+   Drives the concept DOM with live detections, the real MapLibre map,
+   the appliance API, auth, and the DroneDingo logo/theme.
    ==================================================================== */
 (() => {
   "use strict";
-
   const $ = (id) => document.getElementById(id);
 
+  const ICON_DRONE = '<svg viewBox="0 0 24 24" fill="currentColor">'
+    + '<path d="M12 2.6l1.6 3H10.4z"/>'
+    + '<line x1="7" y1="7" x2="17" y2="17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '<line x1="17" y1="7" x2="7" y2="17" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>'
+    + '<circle cx="5.6" cy="5.6" r="2.7"/><circle cx="18.4" cy="5.6" r="2.7"/>'
+    + '<circle cx="5.6" cy="18.4" r="2.7"/><circle cx="18.4" cy="18.4" r="2.7"/>'
+    + '<rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.5"/></svg>';
+  const ICON_OP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.4"/>'
+    + '<path d="M5 20c0-4 3.2-6.4 7-6.4s7 2.4 7 6.4z"/></svg>';
+
   const state = {
-    cfg: null,
-    home: null,
-    contacts: new Map(),   // drone_id -> contact object (LIVE)
-    focused: null,
-    mode: "live",          // "live" | "review"
+    cfg: null, home: null, node: "—",
+    contacts: new Map(),        // drone_id -> {last, positions[], lastSeen}
+    ws: null, mode: "live",
     pickingHome: false,
-    ws: null,
-    review: null,          // review session object
+    events: [], page: 0,
+    review: null,
   };
+  const TTL = 30_000;
+  const INNER = () => (state.cfg?.map?.range_rings_m?.[0] ?? 250);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const fmtDist = (m) => m == null ? "—"
+    : m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m";
+  const num = (v, u = "") => v == null ? "—" : (Math.round(v * 10) / 10) + u;
 
-  const CONTACT_TTL = 30_000;   // drop a live contact after 30s of silence
-  const INNER_RING = () => (state.cfg?.map?.range_rings_m?.[0] ?? 250);
-
-  /* ---------------------------- boot ---------------------------- */
+  /* ------------------------------ boot ------------------------------ */
   async function boot() {
     initTheme();
+    const who = await fetch("/api/auth/whoami").then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!who || !who.email) { location.href = "/login"; return; }
+
     state.cfg = await (await fetch("/api/config")).json();
-    applyBrand(state.cfg.brand);
     state.home = state.cfg.site.home;
-    await initMap();
+    state.node = state.cfg.node_id;
+    applyBrand(state.cfg.brand);
+    $("node-id").textContent = state.node;
+
+    await DDMap.init({
+      container: "map",
+      center: { lat: state.home.lat, lon: state.home.lon },
+      zoom: state.cfg.map.default_zoom,
+      onClick: (lat, lon) => { if (state.pickingHome) setHomeFromMap(lat, lon); },
+    });
+    DDMap.setHome(state.home.lat, state.home.lon, state.home.label, state.cfg.map.range_rings_m || []);
+    showBasemapInfo();
+
+    buildSettingsNav();
     wireUI();
     connectWS();
-    tickClock();
-    setInterval(tickClock, 1000);
+    tickClock(); setInterval(tickClock, 1000);
     setInterval(pruneContacts, 3000);
     loadEvents();
   }
@@ -38,758 +65,537 @@
   function applyBrand(brand) {
     if (!brand) return;
     const root = document.documentElement;
-    for (const [key, varName] of [["accent", "--accent"],
-                                  ["accent_alt", "--accent-alt"],
-                                  ["home", "--home"],
-                                  ["danger", "--danger"]]) {
-      if (brand[key]) root.style.setProperty(varName, brand[key]);
-    }
-    renderWordmark(brand.product_name);
-    $("brandTag").textContent = brand.tagline;
-    $("nodeId").textContent = state.cfg.node_id;
-    document.title = brand.product_name;
+    // Feed the config accent into both the concept vars and the map vars.
+    if (brand.accent) { root.style.setProperty("--orange", brand.accent); root.style.setProperty("--accent", brand.accent); }
+    if (brand.accent) root.style.setProperty("--orange-hot", brand.accent);
+    if (brand.accent_alt) root.style.setProperty("--accent-alt", brand.accent_alt);
+    if (brand.home) root.style.setProperty("--home", brand.home);
+    if (brand.danger) { root.style.setProperty("--danger", brand.danger); }
+    if (brand.tagline) $("tagline").textContent = brand.tagline;
+    document.title = brand.product_name || "DroneDingo";
   }
 
-  /** Two-tone the wordmark like the logo: "Drone" + "Dingo". */
-  function renderWordmark(name) {
-    const el = $("brandName");
-    el.textContent = "";
-    const m = /^([A-Z][a-z]+)([A-Z].*)$/.exec(name || "");
-    if (m) {
-      const a = document.createElement("span"); a.className = "b1"; a.textContent = m[1];
-      const b = document.createElement("span"); b.className = "b2"; b.textContent = m[2];
-      el.append(a, b);
-    } else {
-      el.textContent = name || "";
-    }
-  }
-
-  /* ---------------------------- theme ---------------------------- */
-  function initTheme() {
-    const saved = localStorage.getItem("dd-theme");
-    if (saved) document.documentElement.setAttribute("data-theme", saved);
-    updateThemeButton();
-  }
+  /* ------------------------------ theme ------------------------------ */
   function currentTheme() {
     return document.documentElement.getAttribute("data-theme")
       || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  }
+  function setLogoForTheme() {
+    const src = currentTheme() === "dark" ? "/vendor/brand/mark-dark.png" : "/vendor/brand/mark.png";
+    document.querySelectorAll(".brand-mark, .about-logo").forEach((img) => { img.src = src; });
+    const b = $("theme-toggle"); if (b) b.textContent = currentTheme() === "dark" ? "☀" : "☾";
+  }
+  function initTheme() {
+    const saved = localStorage.getItem("dd-theme");
+    document.documentElement.setAttribute("data-theme", saved || "dark");
+    setLogoForTheme();
   }
   function toggleTheme() {
     const next = currentTheme() === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     localStorage.setItem("dd-theme", next);
-    updateThemeButton();
-    if (window.DDMap) DDMap.setTheme(next);   // re-tone the basemap
-  }
-  function updateThemeButton() {
-    const b = $("btnTheme");
-    if (b) b.textContent = currentTheme() === "dark" ? "☀" : "☾";
+    setLogoForTheme();
+    if (window.DDMap) DDMap.setTheme(next);
   }
 
-  /** Read a themed colour so canvas/SVG layers match the CSS palette. */
-  function themeColor(name, fallback) {
-    return getComputedStyle(document.documentElement)
-      .getPropertyValue(name).trim() || fallback;
-  }
-
-  /* ---------------------------- map ---------------------------- */
-  async function initMap() {
-    await DDMap.init({
-      container: "map",
-      center: { lat: state.home.lat, lon: state.home.lon },
-      zoom: state.cfg.map.default_zoom,
-      onClick: (lat, lon) => {
-        if (state.pickingHome) setHomeFromLatLng(lat, lon);
-      },
-    });
-    drawHome();
-    showBasemapInfo();
-  }
-
-  function drawHome() {
-    DDMap.setHome(state.home.lat, state.home.lon, state.home.label,
-                  state.cfg.map.range_rings_m || []);
-  }
-
-  /** Note in the legend whether the map is running offline. */
-  async function showBasemapInfo() {
-    try {
-      const info = await (await fetch("/api/map/info")).json();
-      const el = $("basemapInfo");
-      if (!el) return;
-      el.textContent = info.offline
-        ? `Offline basemap · ${info.vector ? "vector" : "raster"}`
-        : "Online basemap";
-      el.classList.toggle("offline-ok", !!info.offline);
-    } catch (_) { /* non-critical */ }
-  }
-
-  /* ---------------------------- websocket ---------------------------- */
+  /* ------------------------------ websocket ------------------------------ */
   function connectWS() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     state.ws = ws;
-    // One keepalive per socket, cleared on close — otherwise reconnects on a
-    // flaky link accumulate timers for the life of the page.
     let keepalive = null;
-    const shutdown = () => {
-      if (keepalive) { clearInterval(keepalive); keepalive = null; }
-    };
-    ws.onopen = () => {
-      setLink(true);
-      keepalive = setInterval(() => {
-        if (ws.readyState === 1) ws.send("ping");
-      }, 20000);
-    };
-    ws.onclose = () => { shutdown(); setLink(false); setTimeout(connectWS, 2000); };
+    ws.onopen = () => { setLink(true); keepalive = setInterval(() => ws.readyState === 1 && ws.send("ping"), 20000); };
+    ws.onclose = () => { if (keepalive) clearInterval(keepalive); setLink(false); setTimeout(connectWS, 2000); };
     ws.onerror = () => ws.close();
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.kind === "detection" && state.mode === "live") onDetection(msg);
     };
   }
-
   function setLink(up) {
-    const pill = $("linkPill");
-    pill.classList.toggle("live", up);
-    pill.classList.toggle("down", !up);
-    $("linkText").textContent = up ? "LIVE" : "OFFLINE";
+    $("link-text").textContent = up ? "LIVE" : "OFFLINE";
+    $("live-dot").style.background = up ? "#3cdb94" : "var(--danger)";
+    $("live-dot").style.boxShadow = up ? "0 0 12px #3cdb94" : "none";
   }
 
-  /* ---------------------------- live detections ---------------------------- */
+  /* ------------------------------ live detections ------------------------------ */
   function onDetection(d) {
     let c = state.contacts.get(d.drone_id);
-    if (!c) { c = createContact(d); state.contacts.set(d.drone_id, c); }
-    updateContact(c, d);
-    renderContacts();
-    maybeAlert(c, d);
-  }
-
-  function createContact(d) {
-    return {
-      id: d.drone_id, model: d.model, source: d.source,
-      positions: [], last: d, lastSeen: Date.now(), altHist: [],
-    };
-  }
-
-  function updateContact(c, d) {
-    c.last = d; c.lastSeen = Date.now(); c.model = d.model || c.model;
+    if (!c) { c = { positions: [], lastSeen: 0 }; state.contacts.set(d.drone_id, c); }
+    c.last = d; c.lastSeen = Date.now();
     if (d.drone_lat != null) {
       c.positions.push([d.drone_lat, d.drone_lon]);
       if (c.positions.length > 600) c.positions.shift();
-      DDMap.setTrack(c.id, c.positions);
-      const threat = d.range_m != null && d.range_m <= INNER_RING();
-      DDMap.upsertDrone(c.id, d.drone_lat, d.drone_lon, d.heading_deg, threat,
-                        `${c.model || "Drone"} • ${fmtDist(d.range_m)}`,
-                        focusContact);
-      if (d.height_agl_m != null) {
-        c.altHist.push(d.height_agl_m);
-        if (c.altHist.length > 40) c.altHist.shift();
-      }
+      const threat = d.range_m != null && d.range_m <= INNER();
+      DDMap.upsertDrone(d.drone_id, d.drone_lat, d.drone_lon, d.heading_deg, threat,
+        `${d.model || "Drone"} • ${fmtDist(d.range_m)}`, () => openDetail(d.drone_id));
+      DDMap.setTrack(d.drone_id, c.positions);
+      if (d.operator_lat != null) DDMap.upsertOperator(d.drone_id, d.operator_lat, d.operator_lon);
     }
-    if (d.operator_lat != null) {
-      DDMap.upsertOperator(c.id, d.operator_lat, d.operator_lon);
-    }
+    renderContacts();
+    refreshAlertStrip();
   }
 
   function pruneContacts() {
     if (state.mode !== "live") return;
     const now = Date.now();
-    for (const [id, c] of state.contacts) {
-      if (now - c.lastSeen > CONTACT_TTL) {
-        DDMap.removeContact(id);
-        state.contacts.delete(id);
-      }
-    }
-    renderContacts();
+    for (const [id, c] of state.contacts)
+      if (now - c.lastSeen > TTL) { DDMap.removeContact(id); state.contacts.delete(id); }
+    renderContacts(); refreshAlertStrip();
   }
 
-  /* ---------------------------- contact panel ---------------------------- */
+  function sortedContacts() {
+    return [...state.contacts.entries()]
+      .sort((a, b) => (a[1].last.range_m ?? 9e9) - (b[1].last.range_m ?? 9e9));
+  }
+
   function renderContacts() {
-    const list = $("contactList");
-    const arr = [...state.contacts.values()].sort((a, b) =>
-      (a.last.range_m ?? 9e9) - (b.last.range_m ?? 9e9));
-    $("activeCount").textContent = arr.length;
-    $("contactsEmpty").style.display = arr.length ? "none" : "";
+    const list = $("contact-list"), arr = sortedContacts();
+    $("contact-count").textContent = arr.length;
+    $("contacts-empty").style.display = arr.length ? "none" : "";
     list.innerHTML = "";
-    for (const c of arr) list.appendChild(contactCard(c));
+    for (const [id, c] of arr) list.appendChild(contactCard(id, c.last));
   }
 
-  function contactCard(c) {
-    const d = c.last;
-    const threat = d.range_m != null && d.range_m <= INNER_RING();
-    const el = document.createElement("div");
-    el.className = "contact" + (threat ? " threat" : "") + (state.focused === c.id ? " focused" : "");
-    const opDist = operatorDistance(d);
-    el.innerHTML = `
-      <div class="contact-top">
-        <span class="contact-model">${esc(c.model || "Unknown UA")}</span>
-        <span class="contact-src">${esc(d.source || "")}</span>
-      </div>
-      <div class="contact-id">${esc(c.id)}</div>
-      <div class="tel-grid">
-        <div class="tel"><span class="v">${d.range_m != null ? fmtDist(d.range_m) : "—"}</span><span class="k">Range ${d.compass || ""}</span></div>
-        <div class="tel"><span class="v">${num(d.height_agl_m)}<small>m</small></span><span class="k">Height</span></div>
-        <div class="tel"><span class="v">${num(d.speed_mps)}<small>m/s</small></span><span class="k">Speed</span></div>
-        <div class="tel"><span class="v">${num(d.heading_deg)}<small>°</small></span><span class="k">Heading</span></div>
-        <div class="tel"><span class="v">${num(d.vspeed_mps)}<small>m/s</small></span><span class="k">V-Speed</span></div>
-        <div class="tel"><span class="v">${d.rssi != null ? Math.round(d.rssi) : "—"}</span><span class="k">RSSI</span></div>
-      </div>
-      ${opDist ? `<div class="contact-op">◎ Operator located ${opDist}</div>` : ""}`;
-    el.onclick = () => focusContact(c.id);
+  function contactCard(id, d) {
+    const el = document.createElement("button");
+    el.className = "contact-card"; el.dataset.id = id;
+    const opTxt = d.operator_lat != null ? `Operator estimated ${fmtDist(opDist(d))} from base` : "Operator not broadcast";
+    el.innerHTML =
+      `<span class="contact-head"><span class="drone-icon">${ICON_DRONE}</span>`
+      + `<span class="contact-name"><strong>${esc(d.model || "Unknown UA")}</strong>`
+      + `<small>${esc(d.source || "")} · ${esc(d.drone_id)}</small></span>`
+      + `<span class="contact-distance">${fmtDist(d.range_m)}</span></span>`
+      + `<span class="telemetry">`
+      + tel("Range", d.compass || "—") + tel("Height", num(d.height_agl_m, " m"))
+      + tel("Speed", num(d.speed_mps, " m/s")) + tel("Heading", num(d.heading_deg, "°"))
+      + tel("V-Speed", num(d.vspeed_mps, " m/s")) + tel("Signal", d.rssi != null ? Math.round(d.rssi) + " dBm" : "—")
+      + `</span>`
+      + `<span class="operator-line"><span class="operator-icon">${ICON_OP}</span>${esc(opTxt)}</span>`;
+    el.addEventListener("click", () => openDetail(id));
     return el;
   }
+  const tel = (k, v) => `<span><small>${k}</small>${esc(v)}</span>`;
 
-  function focusContact(id) {
-    state.focused = id;
-    const c = state.contacts.get(id)
-      || (state.review && state.review.contacts.get(id));
-    const last = c && (c.last || (c.rows && c.rows[c.rows.length - 1]));
-    if (last && last.drone_lat != null) DDMap.panTo(last.drone_lat, last.drone_lon);
-    renderContacts();
-  }
-
-  function operatorDistance(d) {
+  function opDist(d) {
     if (d.operator_lat == null || !state.home) return null;
-    const m = haversine(state.home.lat, state.home.lon, d.operator_lat, d.operator_lon);
-    return `${fmtDist(m)} from base`;
+    return haversine(state.home.lat, state.home.lon, d.operator_lat, d.operator_lon);
   }
 
-  /* ---------------------------- alerts ---------------------------- */
-  let alertTimer = null;
-  function maybeAlert(c, d) {
-    if (d.range_m != null && d.range_m <= INNER_RING()) {
-      const b = $("alertBanner");
-      $("alertText").textContent =
-        `⚠ ${c.model || "Drone"} within ${fmtDist(d.range_m)} of ${state.home.label || "Home Base"} — bearing ${d.compass || d.bearing_deg + "°"}`;
-      b.hidden = false;
-      clearTimeout(alertTimer);
-      alertTimer = setTimeout(() => (b.hidden = true), 8000);
-    }
+  function refreshAlertStrip() {
+    const strip = $("alert-strip");
+    const threat = sortedContacts().find(([, c]) => c.last.range_m != null && c.last.range_m <= INNER());
+    if (!threat) { strip.hidden = true; return; }
+    const d = threat[1].last;
+    $("alert-text").innerHTML = `<strong>${esc(d.model || "Drone")}</strong> within ${fmtDist(d.range_m)} of `
+      + `${esc(state.home.label || "Home Base")} — bearing ${esc(d.compass || d.bearing_deg + "°")}`;
+    strip.hidden = false;
   }
 
-  /* ---------------------------- sighting log ---------------------------- */
+  /* ------------------------------ detail modal ------------------------------ */
+  function openDetail(id) {
+    const c = state.contacts.get(id) || (state.review && state.review.contacts.get(id));
+    const d = c && (c.last || c.rows?.[c.rows.length - 1]); if (!d) return;
+    $("detail-name").textContent = d.model || "Unknown UA";
+    $("detail-id").textContent = `${d.source || ""} · ${d.drone_id}`;
+    $("detail-distance").textContent = fmtDist(d.range_m);
+    $("detail-icon").innerHTML = ICON_DRONE;
+    const rows = [
+      ["Serial number", d.drone_id],
+      ["Model", d.model || "—"],
+      ["Broadcast source", d.source || "—"],
+      ["Operator location", d.operator_lat != null ? `${d.operator_lat.toFixed(5)}, ${d.operator_lon.toFixed(5)}` : "not broadcast"],
+      ["Operator range", d.operator_lat != null ? fmtDist(opDist(d)) : "—"],
+      ["Current range", `${fmtDist(d.range_m)} ${d.compass || ""}`.trim()],
+      ["Height (AGL)", num(d.height_agl_m, " m")],
+      ["Altitude (MSL)", num(d.alt_msl_m, " m")],
+      ["Speed", num(d.speed_mps, " m/s")],
+      ["Heading", num(d.heading_deg, "°")],
+      ["Signal", d.rssi != null ? Math.round(d.rssi) + " dBm" : "—"],
+      ["Node", d.node_id || state.node],
+    ];
+    $("detail-grid").innerHTML = rows.map(([k, v]) =>
+      `<span class="detail-item"><small>${esc(k)}</small><strong>${esc(v)}</strong></span>`).join("");
+    openModal("detail-modal");
+  }
+
+  /* ------------------------------ sighting log ------------------------------ */
   async function loadEvents() {
     try {
-      const { events } = await (await fetch("/api/events?days=30")).json();
-      const list = $("eventList");
-      list.innerHTML = "";
-      for (const e of events.slice(0, 60)) list.appendChild(eventRow(e));
-    } catch (_) { /* ignore */ }
+      const r = await (await fetch("/api/events?days=30")).json();
+      state.events = r.events || [];
+    } catch (_) { state.events = []; }
   }
-  function eventRow(e) {
-    const el = document.createElement("div");
-    el.className = "event";
-    const dur = Math.max(1, Math.round((e.last_seen - e.first_seen)));
-    el.innerHTML = `
-      <div class="event-title"><b>${esc(e.model || e.drone_id)}</b><span class="event-meta">${clockOf(e.last_seen)}</span></div>
-      <div class="event-meta">${esc(e.drone_id)}</div>
-      <div class="event-meta">${fmtDur(dur)} · max ${Math.round(e.max_alt_m)}m · ${e.count} hits${e.operator_lat != null ? " · operator logged" : ""}</div>`;
-    return el;
-  }
-
-  /* ---------------------------- review / playback ---------------------------- */
-  function enterReview() {
-    state.mode = "review";
-    $("btnReview").classList.add("active"); $("btnLive").classList.remove("active");
-    $("pbControls").hidden = false;
-    DDMap.clearContacts();          // drop the live overlay
-    state.contacts.clear();
-    loadReviewWindow();
-  }
-  function enterLive() {
-    state.mode = "live";
-    $("btnLive").classList.add("active"); $("btnReview").classList.remove("active");
-    $("pbControls").hidden = true;
-    stopPlay();
-    DDMap.clearContacts();
-    state.review = null;
-    renderContacts();
-  }
-
-  async function loadReviewWindow() {
-    stopPlay();
-    const win = parseInt($("pbWindow").value, 10);
-    const end = Date.now() / 1000;
-    const start = end - win;
-    const { detections } = await (await fetch(`/api/detections?start=${start}&end=${end}`)).json();
-    const contacts = new Map();
-    for (const d of detections) {
-      if (!contacts.has(d.drone_id)) contacts.set(d.drone_id, { id: d.drone_id, model: d.model, rows: [] });
-      contacts.get(d.drone_id).rows.push(d);
-    }
-    DDMap.clearContacts();
-    state.review = { start, end, detections, contacts,
-                     playhead: start, playing: false };
-    $("scrubber").value = 1000;
-    renderReviewAt(end);
-    $("pbTime").textContent = detections.length
-      ? `${clockOf(start)} — ${clockOf(end)}  (${detections.length} pts)`
-      : "No data in this window";
-  }
-
-  function renderReviewAt(t) {
-    if (!state.review) return;
-    const active = [];
-    for (const [id, c] of state.review.contacts) {
-      const rows = c.rows.filter((r) => r.ts <= t);
-      const pts = rows.filter((r) => r.drone_lat != null)
-                      .map((r) => [r.drone_lat, r.drone_lon]);
-      DDMap.setTrack(id, pts);
-      const last = rows[rows.length - 1];
-      // Treat a contact as "in the air" if seen in the last 15s of timeline.
-      const recent = last && (t - last.ts) < 15;
-      if (recent && last.drone_lat != null) {
-        DDMap.upsertDrone(id, last.drone_lat, last.drone_lon, last.heading_deg,
-                          false, `${c.model || "Drone"} • ${clockOf(last.ts)}`,
-                          focusContact);
-        if (last.operator_lat != null) {
-          DDMap.upsertOperator(id, last.operator_lat, last.operator_lon);
-        }
-        active.push({ id, model: c.model, last: annotate(last) });
-      } else {
-        DDMap.hideMarkers(id);      // keep the track, drop the aircraft
-      }
-    }
-    // reuse contact panel for the review frame
-    const list = $("contactList"); list.innerHTML = "";
-    $("activeCount").textContent = active.length;
-    $("contactsEmpty").style.display = active.length ? "none" : "";
-    active.sort((a, b) => (a.last.range_m ?? 9e9) - (b.last.range_m ?? 9e9));
-    for (const c of active) list.appendChild(contactCard({ id: c.id, model: c.model, last: c.last }));
-    $("pbTime").textContent = `${clockOf(t)}`;
-  }
-
-  function annotate(d) {
-    const o = { ...d };
-    if (d.drone_lat != null && state.home) {
-      o.range_m = Math.round(haversine(state.home.lat, state.home.lon, d.drone_lat, d.drone_lon));
-      const brg = bearing(state.home.lat, state.home.lon, d.drone_lat, d.drone_lon);
-      o.bearing_deg = Math.round(brg); o.compass = compass16(brg);
-    }
-    return o;
-  }
-
-  let playRAF = null, lastFrame = 0;
-  function togglePlay() { state.review && (state.review.playing ? stopPlay() : startPlay()); }
-  function startPlay() {
-    if (!state.review) return;
-    state.review.playing = true; $("btnPlay").textContent = "❚❚";
-    if (state.review.playhead >= state.review.end) state.review.playhead = state.review.start;
-    lastFrame = performance.now();
-    const step = (now) => {
-      if (!state.review || !state.review.playing) return;
-      const speed = parseFloat($("pbSpeed").value);
-      const dt = (now - lastFrame) / 1000; lastFrame = now;
-      state.review.playhead = Math.min(state.review.end, state.review.playhead + dt * speed);
-      const frac = (state.review.playhead - state.review.start) / (state.review.end - state.review.start);
-      $("scrubber").value = Math.round(frac * 1000);
-      renderReviewAt(state.review.playhead);
-      if (state.review.playhead >= state.review.end) return stopPlay();
-      playRAF = requestAnimationFrame(step);
-    };
-    playRAF = requestAnimationFrame(step);
-  }
-  function stopPlay() {
-    if (playRAF) cancelAnimationFrame(playRAF);
-    playRAF = null;
-    if (state.review) state.review.playing = false;
-    $("btnPlay").textContent = "▶";
-  }
-
-  /* ---------------------------- admin panel ---------------------------- */
-  function openSettings(tab) {
-    $("homeLat").value = Number(state.home.lat).toFixed(5);
-    $("homeLon").value = Number(state.home.lon).toFixed(5);
-    $("homeLabel").value = state.home.label || "Home Base";
-    $("settingsModal").hidden = false;
-    showTab(tab || "location");
-  }
-  function closeSettings() { $("settingsModal").hidden = true; state.pickingHome = false; }
-
-  function showTab(name) {
-    document.querySelectorAll(".admin-tab").forEach((b) =>
-      b.classList.toggle("active", b.dataset.tab === name));
-    document.querySelectorAll(".admin-pane").forEach((p) =>
-      p.classList.toggle("active", p.dataset.pane === name));
-    if (name === "alerts") loadAlertsForm();
-    else if (name === "system") loadSystem();
-    else if (name === "network") loadNetwork();
-    else if (name === "updates") checkUpdate();
-    else if (name === "about") loadAbout();
-    else if (name === "account") loadAccount();
-  }
-
-  async function loadAccount() {
-    try {
-      const w = await (await fetch("/api/auth/whoami")).json();
-      $("acctEmail").textContent = w.email || "—";
-    } catch (_) {}
-  }
-  async function changeEmail() {
-    const el = $("emStatus");
-    try {
-      const r = await fetch("/api/auth/email", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: $("emNew").value, password: $("emPass").value }) });
-      const d = await r.json();
-      el.className = "small " + (d.ok ? "alert-ok" : "alert-off");
-      el.textContent = d.ok ? "Email updated." : (d.error || "Failed.");
-      if (d.ok) { $("emPass").value = ""; loadAccount(); }
-    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed."; }
-  }
-
-  /* ---- Alerts (editable) ---- */
-  async function loadAlertsForm() {
-    try {
-      const a = await (await fetch("/api/alerts/config")).json();
-      $("aNtfyTopic").value = a.ntfy_topic || "";
-      $("aNtfyServer").value = a.ntfy_server || "";
-      $("aWebhook").value = a.webhook_url || "";
-      $("aRing").value = a.alert_ring_m ?? "";
-      $("aResight").value = a.resight_after_s ?? "";
-      $("aQuiet").value = a.quiet_hours || "";
-      $("aQuietSuppress").checked = !!a.quiet_hours_suppress;
-    } catch (_) {}
-  }
-  async function saveAlerts() {
-    const body = {
-      ntfy_topic: $("aNtfyTopic").value.trim(),
-      ntfy_server: $("aNtfyServer").value.trim(),
-      webhook_url: $("aWebhook").value.trim(),
-      alert_ring_m: $("aRing").value, resight_after_s: $("aResight").value,
-      quiet_hours: $("aQuiet").value.trim(),
-      quiet_hours_suppress: $("aQuietSuppress").checked,
-    };
-    const el = $("alertStatus"); el.textContent = "Saving…";
-    try {
-      await fetch("/api/alerts/config", { method: "POST",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      el.className = "small alert-ok"; el.textContent = "Saved.";
-    } catch (_) { el.className = "small alert-off"; el.textContent = "Save failed."; }
-  }
-  async function sendTestAlert() {
-    const el = $("alertStatus"); el.textContent = "Sending…";
-    try {
-      const r = await (await fetch("/api/alerts/test", { method: "POST" })).json();
-      el.className = "small " + (r.ok ? "alert-ok" : "alert-off");
-      el.textContent = r.ok ? "Test sent — check your phone." : `Failed: ${r.error}`;
-    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed to send."; }
-  }
-
-  /* ---- System ---- */
-  const fmtBytes = (b) => b == null ? "—"
-    : b >= 1e9 ? (b / 1073741824).toFixed(1) + " GB" : (b / 1048576).toFixed(0) + " MB";
-  const fmtUptime = (s) => {
-    if (s == null) return "—";
-    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-    return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  const clockOf = (ts) => new Date(ts * 1000).toLocaleString("en-AU",
+    { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+  const durOf = (a, b) => {
+    let s = Math.max(0, Math.round(b - a)); const h = Math.floor(s / 3600); s -= h * 3600;
+    const m = Math.floor(s / 60); s -= m * 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   };
-  function setBar(id, pct, warnAt, hotAt) {
-    const el = $(id); if (!el) return;
-    const p = Math.max(0, Math.min(100, pct || 0));
-    el.style.width = p + "%";
-    el.classList.toggle("warn", hotAt ? p >= warnAt && p < hotAt : p >= warnAt);
-    if (hotAt) el.classList.toggle("hot", p >= hotAt);
-  }
-  async function loadSystem() {
-    try {
-      const s = await (await fetch("/api/system/status")).json();
-      $("sHost").textContent = s.hostname || "—";
-      $("sModel").textContent = s.pi_model || "—";
-      $("sUptime").textContent = fmtUptime(s.uptime_s);
-      $("sSvc").textContent = s.service || "—";
-      $("sSvc").style.color = s.service === "active" ? "var(--accent-alt)"
-        : (s.service === "n/a" ? "" : "var(--danger)");
-
-      // Throttle banner (Pi-only).
-      const t = s.throttle, tb = $("sThrottle");
-      if (!t) { tb.hidden = true; }
-      else if (t.healthy) {
-        tb.hidden = false; tb.className = "throttle ok";
-        tb.textContent = "Power & thermal healthy — no throttling.";
-      } else {
-        tb.hidden = false; tb.className = "throttle warn";
-        const now = t.active_now.map((x) => `<b>${esc(x)}</b>`);
-        const past = t.since_boot.map((x) => esc(x));
-        tb.innerHTML = [...now, ...past].join("<br>")
-          || "Throttling flags set (" + esc(t.value) + ")";
-      }
-
-      // Bars.
-      const mem = s.memory && s.memory.total ? s.memory.percent : 0;
-      setBar("sMemBar", mem, 75, 90);
-      $("sMem").textContent = s.memory && s.memory.total
-        ? `${mem}% of ${fmtBytes(s.memory.total)}` : "—";
-
-      const loadPct = s.load && s.cpu_count ? (s.load[0] / s.cpu_count) * 100 : 0;
-      setBar("sLoadBar", loadPct, 70, 100);
-      $("sLoad").textContent = s.load ? s.load.join("  ") : "—";
-
-      const temp = s.cpu_temp_c || 0;
-      setBar("sTempBar", (temp / 85) * 100, 65 / 85 * 100, 80 / 85 * 100);
-      $("sTemp").textContent = s.cpu_temp_c != null ? s.cpu_temp_c + " °C" : "—";
-
-      const d = s.disk;
-      setBar("sDiskBar", d ? d.percent : 0, 80, 92);
-      $("sDisk").textContent = d
-        ? `${d.percent}% — ${fmtBytes(d.used)} of ${fmtBytes(d.total)}` : "—";
-    } catch (_) {}
-  }
-  async function doReboot() {
-    if (!confirm("Reboot the appliance now? Detection will stop for ~1 minute.")) return;
-    await fetch("/api/system/reboot", { method: "POST" });
-    setLink(false);
+  function renderSightings() {
+    const size = 6, ev = state.events, start = state.page * size, end = Math.min(start + size, ev.length);
+    $("sighting-rows").innerHTML = ev.slice(start, end).map((s) =>
+      `<tr><td><strong>${esc(s.model || "Unknown")}</strong><br><small>${esc(s.drone_id)}</small></td>`
+      + `<td>${esc(clockOf(s.first_seen))}</td><td>${durOf(s.first_seen, s.last_seen)}</td>`
+      + `<td>${num(s.max_alt_m, " m")}</td><td>${(s.count || 0).toLocaleString()}</td></tr>`).join("")
+      || `<tr><td colspan="5" style="color:var(--muted)">No sightings recorded yet.</td></tr>`;
+    $("page-caption").textContent = ev.length
+      ? `Showing ${start + 1}–${end} of ${ev.length} sightings` : "No sightings yet";
+    $("page-prev").disabled = state.page === 0;
+    $("page-next").disabled = end >= ev.length;
   }
 
-  /* ---- Network ---- */
-  async function loadNetwork() {
-    try {
-      const n = await (await fetch("/api/system/network")).json();
-      const box = $("netInterfaces");
-      box.innerHTML = n.interfaces.length ? "" : '<p class="muted small">No interfaces reported (Linux-only).</p>';
-      const ethSel = $("ethIface"); ethSel.innerHTML = "";
-      for (const itf of n.interfaces) {
-        const row = document.createElement("div"); row.className = "net-row";
-        row.innerHTML = `<span><span class="ssid">${esc(itf.name)}</span> `
-          + `<span class="meta">${esc(itf.type)} · ${itf.state}</span></span>`
-          + `<span class="meta">${esc((itf.addresses || []).join(", ") || "—")}</span>`;
-        box.appendChild(row);
-        if (itf.type === "ethernet") {
-          const o = document.createElement("option");
-          o.value = itf.name; o.textContent = itf.name; ethSel.appendChild(o);
-        }
-      }
-      if (!ethSel.children.length) {
-        const o = document.createElement("option"); o.textContent = "No ethernet"; o.value = "";
-        ethSel.appendChild(o);
-      }
-      $("wifiCurrent").textContent = n.wifi ? `Connected: ${n.wifi.name}` : "Not connected to Wi-Fi.";
-    } catch (_) {}
-  }
-  async function applyEthernet() {
-    const body = {
-      iface: $("ethIface").value, mode: $("ethMode").value,
-      ip: $("ethIp").value.trim(), gateway: $("ethGw").value.trim(),
-      dns: $("ethDns").value.trim(),
-    };
-    const el = $("ethStatus"); el.textContent = "Applying…";
-    try {
-      const r = await (await fetch("/api/system/ethernet", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body) })).json();
-      el.className = "small " + (r.ok ? "alert-ok" : "alert-off");
-      el.textContent = r.message || (r.ok ? "Applied." : "Failed.");
-      if (r.ok) loadNetwork();
-    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed."; }
-  }
-  async function wifiScan() {
-    const list = $("wifiList"); list.innerHTML = '<p class="muted small">Scanning…</p>';
-    try {
-      const r = await (await fetch("/api/system/wifi/scan")).json();
-      list.innerHTML = r.networks.length ? "" : '<p class="muted small">No networks found.</p>';
-      for (const net of r.networks) {
-        const row = document.createElement("div"); row.className = "net-row";
-        row.innerHTML = `<span><span class="ssid">${esc(net.ssid)}</span> `
-          + `<span class="meta">${esc(net.security)}</span></span>`
-          + `<span class="wifi-bars">${net.signal}%</span>`;
-        const btn = document.createElement("button"); btn.className = "btn ghost";
-        btn.textContent = net.active ? "Connected" : "Join"; btn.disabled = net.active;
-        btn.onclick = () => promptWifi(net.ssid);
-        row.appendChild(btn); list.appendChild(row);
-      }
-    } catch (_) { list.innerHTML = '<p class="muted small">Scan failed.</p>'; }
-  }
-  function promptWifi(ssid) {
-    $("wifiSsid").textContent = ssid; $("wifiPass").value = "";
-    $("wifiConnect").hidden = false; $("wifiPass").focus();
-  }
-  async function wifiJoin() {
-    const ssid = $("wifiSsid").textContent, password = $("wifiPass").value;
-    $("netStatus").textContent = `Connecting to ${ssid}…`;
-    try {
-      const r = await (await fetch("/api/system/wifi/connect", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ssid, password }) })).json();
-      $("netStatus").textContent = r.message || (r.ok ? "Connected." : "Failed.");
-      if (r.ok) { $("wifiConnect").hidden = true; loadNetwork(); }
-    } catch (_) { $("netStatus").textContent = "Connection failed."; }
-  }
-
-  /* ---- Updates ---- */
-  async function checkUpdate() {
-    const el = $("ddUpdateStatus"); el.textContent = "Checking…";
-    $("btnInstallUpdate").hidden = true;
-    try {
-      const u = await (await fetch("/api/update/check")).json();
-      el.className = "small " + (u.available ? "update-available" : "muted");
-      el.textContent = u.message + (u.build ? `  (build ${u.build})` : "");
-      if (u.notes) { $("updateLog").hidden = false; $("updateLog").textContent = u.notes; }
-      $("btnInstallUpdate").hidden = !u.available;
-    } catch (_) { el.textContent = "Update check failed."; }
-  }
-  async function installUpdate() {
-    if (!confirm("Install the update and restart DroneDingo now?")) return;
-    const el = $("ddUpdateStatus"); el.textContent = "Installing… the service will restart.";
-    $("btnInstallUpdate").disabled = true;
-    try {
-      const r = await (await fetch("/api/update/install", { method: "POST" })).json();
-      $("updateLog").hidden = false; $("updateLog").textContent = r.output || r.message;
-      el.textContent = r.message;
-    } catch (_) {
-      el.textContent = "Reconnecting after restart…";
-      setTimeout(() => location.reload(), 8000);
-    } finally { $("btnInstallUpdate").disabled = false; }
-  }
-  async function checkOS() {
-    const el = $("osUpdateStatus"); el.textContent = "Checking… this can take a minute.";
-    $("btnInstallOS").hidden = true;
-    try {
-      const r = await (await fetch("/api/update/os/check")).json();
-      el.className = "small " + (r.upgradable ? "update-available" : "muted");
-      el.textContent = r.message;
-      $("btnInstallOS").hidden = !r.upgradable;
-    } catch (_) { el.textContent = "OS update check failed."; }
-  }
-  async function installOS() {
-    if (!confirm("Install operating-system updates now? This can take several minutes.")) return;
-    const el = $("osUpdateStatus"); el.textContent = "Installing OS updates…";
-    $("btnInstallOS").disabled = true;
-    try {
-      const r = await (await fetch("/api/update/os/install", { method: "POST" })).json();
-      el.textContent = r.message;
-    } catch (_) { el.textContent = "OS update failed."; }
-    finally { $("btnInstallOS").disabled = false; }
-  }
-
-  /* ---- Account ---- */
-  async function changePassword() {
-    const el = $("pwStatus");
-    try {
-      const r = await fetch("/api/auth/password", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ current: $("pwCurrent").value, new: $("pwNew").value }) });
-      const d = await r.json();
-      el.className = "small " + (d.ok ? "alert-ok" : "alert-off");
-      el.textContent = d.ok ? "Password updated." : (d.error || "Failed.");
-      if (d.ok) { $("pwCurrent").value = ""; $("pwNew").value = ""; }
-    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed."; }
-  }
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    location.href = "/login";
-  }
-
-  /* ---------------------------- About (settings tab) ---------------------------- */
-  async function loadAbout() {
-    try {
-      const a = await (await fetch("/api/about")).json();
-      renderWordmarkInto($("aboutName"), a.brand.product_name);
-      $("aboutTag").textContent = a.brand.tagline || "";
-      $("aboutVersion").textContent = a.version.version || "—";
-      $("aboutBuild").textContent = a.version.build || a.version.channel || "—";
-      $("aboutNode").textContent = a.node_id || "—";
-      $("aboutCopyright").textContent = a.brand.copyright || "";
-    } catch (_) {}
-  }
-  function renderWordmarkInto(el, name) {
-    el.textContent = "";
-    const m = /^([A-Z][a-z]+)([A-Z].*)$/.exec(name || "");
-    if (m) {
-      const a = document.createElement("span"); a.className = "b1"; a.textContent = m[1];
-      const b = document.createElement("span"); b.className = "b2"; b.textContent = m[2];
-      el.append(a, b);
-    } else { el.textContent = name || ""; }
-  }
-  function setHomeFromLatLng(lat, lon) {
-    $("homeLat").value = lat.toFixed(5); $("homeLon").value = lon.toFixed(5);
-    $("homeHint").textContent = `Picked ${lat.toFixed(5)}, ${lon.toFixed(5)} — press Save.`;
+  /* ------------------------------ home / map pick ------------------------------ */
+  function setHomeFromMap(lat, lon) {
     state.pickingHome = false;
-    $("settingsModal").hidden = false;
+    openModal("settings-modal"); renderSettings("Location");
+    setTimeout(() => { $("set-lat").value = lat.toFixed(5); $("set-lon").value = lon.toFixed(5); }, 30);
   }
   async function saveHome() {
-    const lat = parseFloat($("homeLat").value), lon = parseFloat($("homeLon").value);
+    const lat = parseFloat($("set-lat").value), lon = parseFloat($("set-lon").value);
     if (Number.isNaN(lat) || Number.isNaN(lon)) return;
-    const label = $("homeLabel").value.trim() || "Home Base";
+    const label = $("set-label").value.trim() || "Home Base";
     const res = await (await fetch("/api/home", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lat, lon, label }),
     })).json();
-    state.home = { ...state.home, ...res.home };
-    state.cfg.site.home = state.home;
-    drawHome();
-    DDMap.panTo(lat, lon);
-    closeSettings();
+    state.home = { ...state.home, ...res.home }; state.cfg.site.home = state.home;
+    DDMap.setHome(lat, lon, label, state.cfg.map.range_rings_m || []); DDMap.panTo(lat, lon);
+    setNote("set-note", "Home location saved.", true);
   }
 
-  /* ---------------------------- UI wiring ---------------------------- */
+  async function showBasemapInfo() {
+    try {
+      const i = await (await fetch("/api/map/info")).json();
+      const el = $("basemap-info");
+      el.textContent = i.offline ? `Offline · ${i.vector ? "vector" : "raster"}` : "Online basemap";
+      el.classList.toggle("offline-ok", !!i.offline);
+    } catch (_) {}
+  }
+
+  /* ============================ SETTINGS ============================ */
+  const SECTIONS = ["Location", "Alerts", "System", "Network", "Updates", "Account", "About"];
+  function buildSettingsNav() {
+    const nav = $("settings-nav"); nav.innerHTML = "";
+    SECTIONS.forEach((name, i) => {
+      const b = document.createElement("button");
+      b.textContent = name; b.className = i === 0 ? "active" : "";
+      b.addEventListener("click", () => {
+        nav.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b));
+        renderSettings(name);
+      });
+      nav.append(b);
+    });
+  }
+  const setNote = (id, msg, ok) => { const e = $(id); if (e) { e.textContent = msg; e.className = "status-note " + (ok ? "ok" : "bad"); } };
+  const field = (label, id, val = "", type = "text", ph = "") =>
+    `<label class="field">${label}<input id="${id}" type="${type}" value="${esc(val)}" placeholder="${esc(ph)}"></label>`;
+
+  function renderSettings(name) {
+    const c = $("settings-content");
+    if (name === "Location") {
+      c.innerHTML = `<p>Range and bearing to every contact are measured from the receiver location. Click the map to drop the marker, or type coordinates.</p>`
+        + field("Label", "set-label", state.home.label || "Home Base")
+        + `<div class="form-grid">${field("Latitude", "set-lat", Number(state.home.lat).toFixed(5))}${field("Longitude", "set-lon", Number(state.home.lon).toFixed(5))}</div>`
+        + `<div class="form-actions"><button id="set-pick">Pick on map</button><button class="primary" id="set-save">Save location</button></div><p id="set-note" class="status-note"></p>`;
+      $("set-save").onclick = saveHome;
+      $("set-pick").onclick = () => { state.pickingHome = true; closeModals(); };
+    }
+    else if (name === "Alerts") renderAlerts(c);
+    else if (name === "System") renderSystem(c);
+    else if (name === "Network") renderNetwork(c);
+    else if (name === "Updates") renderUpdates(c);
+    else if (name === "Account") renderAccount(c);
+    else if (name === "About") renderAbout(c);
+  }
+
+  async function renderAlerts(c) {
+    c.innerHTML = `<p>Phone alerts fire when a drone comes within the alert range of Home Base. Register a phone by scanning the QR in the ntfy app.</p>
+      <div id="alert-qr-wrap" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <div id="alert-qr" style="width:132px;height:132px;background:#fff;border-radius:12px;padding:8px"></div>
+        <div style="min-width:180px;color:var(--muted);font-size:13px">Scan to subscribe a device to this appliance's alert channel. <br><b id="alert-topic-txt" style="color:var(--text)"></b></div>
+      </div>`
+      + field("ntfy topic", "al-topic", "", "text", "dronedingo-yourfarm-xxxx")
+      + field("ntfy server", "al-server", "", "text", "https://ntfy.sh")
+      + field("Webhook URL (optional)", "al-webhook", "", "text", "https://…")
+      + `<div class="form-grid">${field("Alert range (m)", "al-ring", "", "number")}${field("Re-alert after (s)", "al-resight", "", "number")}</div>`
+      + `<div class="form-grid">${field("Quiet hours", "al-quiet", "", "text", "22:00-06:00")}<label class="check-field"><input type="checkbox" id="al-suppress"> Silence during quiet hours</label></div>`
+      + `<div class="form-actions"><button id="al-test">Send test</button><button class="primary" id="al-save">Save alerts</button></div><p id="al-note" class="status-note"></p>`;
+    try {
+      const a = await (await fetch("/api/alerts/config")).json();
+      $("al-topic").value = a.ntfy_topic || ""; $("al-server").value = a.ntfy_server || "https://ntfy.sh";
+      $("al-webhook").value = a.webhook_url || ""; $("al-ring").value = a.alert_ring_m ?? "";
+      $("al-resight").value = a.resight_after_s ?? ""; $("al-quiet").value = a.quiet_hours || "";
+      $("al-suppress").checked = !!a.quiet_hours_suppress;
+      drawAlertQR();
+      $("al-topic").addEventListener("input", drawAlertQR);
+      $("al-server").addEventListener("input", drawAlertQR);
+    } catch (_) {}
+    $("al-save").onclick = async () => {
+      await fetch("/api/alerts/config", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ntfy_topic: $("al-topic").value.trim(), ntfy_server: $("al-server").value.trim(),
+          webhook_url: $("al-webhook").value.trim(), alert_ring_m: $("al-ring").value,
+          resight_after_s: $("al-resight").value, quiet_hours: $("al-quiet").value.trim(),
+          quiet_hours_suppress: $("al-suppress").checked }) });
+      setNote("al-note", "Saved.", true);
+    };
+    $("al-test").onclick = async () => {
+      setNote("al-note", "Sending…", true);
+      const r = await (await fetch("/api/alerts/test", { method: "POST" })).json();
+      setNote("al-note", r.ok ? "Test sent — check your phone." : ("Failed: " + r.error), r.ok);
+    };
+  }
+  function drawAlertQR() {
+    const topic = ($("al-topic")?.value || "").trim();
+    const server = ($("al-server")?.value || "https://ntfy.sh").trim().replace(/\/$/, "");
+    const box = $("alert-qr"), txt = $("alert-topic-txt");
+    if (!topic) { if (box) box.innerHTML = '<div style="color:#777;font-size:11px;padding:20px 6px;text-align:center">Set a topic to generate a QR</div>'; if (txt) txt.textContent = ""; return; }
+    const url = `${server}/${topic}`;
+    if (txt) txt.textContent = url;
+    if (window.DDQR && box) box.innerHTML = window.DDQR.svg(url, 116);
+  }
+
+  async function renderSystem(c) {
+    c.innerHTML = `<div id="sys-body"><p style="color:var(--muted)">Loading…</p></div>
+      <div class="form-actions"><button id="sys-refresh">Refresh</button><button id="sys-reboot">Reboot appliance</button></div>
+      <p id="sys-note" class="status-note"></p>`;
+    const load = async () => {
+      const s = await (await fetch("/api/system/status")).json();
+      const bar = (label, pct, val) => `<div class="health-row"><strong>${label}</strong><progress value="${Math.round(pct || 0)}" max="100"></progress><span>${val}</span></div>`;
+      const t = s.throttle;
+      let thr = "";
+      if (t) thr = t.healthy
+        ? `<div class="throttle-note ok">Power &amp; thermal healthy — no throttling.</div>`
+        : `<div class="throttle-note warn">${[...t.active_now.map(x => "<b>" + esc(x) + "</b>"), ...t.since_boot.map(esc)].join("<br>")}</div>`;
+      const memPct = s.memory && s.memory.total ? s.memory.percent : 0;
+      const loadPct = s.load && s.cpu_count ? (s.load[0] / s.cpu_count) * 100 : 0;
+      $("sys-body").innerHTML =
+        `<div class="about-stats" style="margin-bottom:14px"><span><small>Host</small><strong>${esc(s.hostname || "—")}</strong></span>`
+        + `<span><small>Model</small><strong>${esc(s.pi_model || "—")}</strong></span>`
+        + `<span><small>Service</small><strong>${esc(s.service || "—")}</strong></span></div>` + thr
+        + bar("Memory", memPct, s.memory && s.memory.total ? memPct + "%" : "—")
+        + bar("CPU load", loadPct, s.load ? s.load[0] : "—")
+        + bar("CPU temp", (s.cpu_temp_c || 0) / 85 * 100, s.cpu_temp_c != null ? s.cpu_temp_c + "°C" : "—")
+        + bar("Disk", s.disk ? s.disk.percent : 0, s.disk ? s.disk.percent + "%" : "—");
+    };
+    load().catch(() => {});
+    $("sys-refresh").onclick = load;
+    $("sys-reboot").onclick = async () => {
+      if (!confirm("Reboot the appliance now? Detection stops for ~1 minute.")) return;
+      await fetch("/api/system/reboot", { method: "POST" }); setNote("sys-note", "Rebooting…", true);
+    };
+  }
+
+  async function renderNetwork(c) {
+    c.innerHTML = `<h3>Interfaces</h3><div id="net-ifaces"><p style="color:var(--muted)">Loading…</p></div>
+      <h3>Ethernet</h3>
+      <div class="form-grid"><label class="field">Interface<select id="eth-if"></select></label>
+      <label class="field">Addressing<select id="eth-mode"><option value="dhcp">Automatic (DHCP)</option><option value="static">Static IP</option></select></label></div>
+      <div id="eth-static" hidden>${field("IP / prefix", "eth-ip", "", "text", "192.168.1.50/24")}<div class="form-grid">${field("Gateway", "eth-gw", "", "text", "192.168.1.1")}${field("DNS", "eth-dns", "", "text", "1.1.1.1")}</div></div>
+      <div class="form-actions"><button class="primary" id="eth-apply">Apply ethernet</button></div>
+      <h3>Wi-Fi</h3><p id="wifi-cur" style="color:var(--muted)">—</p><div id="wifi-list"></div>
+      <div class="form-actions"><button id="wifi-scan">Scan networks</button></div>
+      <p id="net-note" class="status-note"></p>`;
+    $("eth-mode").onchange = () => { $("eth-static").hidden = $("eth-mode").value !== "static"; };
+    const loadNet = async () => {
+      const n = await (await fetch("/api/system/network")).json();
+      const box = $("net-ifaces"), sel = $("eth-if"); box.innerHTML = ""; sel.innerHTML = "";
+      (n.interfaces || []).forEach((itf) => {
+        box.insertAdjacentHTML("beforeend", `<div class="net-row"><span><strong>${esc(itf.name)}</strong> <span class="meta">${esc(itf.type)} · ${esc(itf.state)}</span></span><span class="meta">${esc((itf.addresses || []).join(", ") || "—")}</span></div>`);
+        if (itf.type === "ethernet") sel.insertAdjacentHTML("beforeend", `<option>${esc(itf.name)}</option>`);
+      });
+      if (!sel.children.length) sel.innerHTML = "<option value=''>No ethernet</option>";
+      if (!n.interfaces || !n.interfaces.length) box.innerHTML = '<p style="color:var(--muted)">No interfaces reported (Linux only).</p>';
+      $("wifi-cur").textContent = n.wifi ? `Connected: ${n.wifi.name}` : "Not connected to Wi-Fi.";
+    };
+    loadNet().catch(() => {});
+    $("wifi-scan").onclick = async () => {
+      const list = $("wifi-list"); list.innerHTML = '<p style="color:var(--muted)">Scanning…</p>';
+      const r = await (await fetch("/api/system/wifi/scan")).json();
+      list.innerHTML = "";
+      (r.networks || []).forEach((net) => {
+        const row = document.createElement("div"); row.className = "net-row";
+        row.innerHTML = `<span><strong>${esc(net.ssid)}</strong> <span class="meta">${esc(net.security)}</span></span><span class="meta">${net.signal}%</span>`;
+        const b = document.createElement("button"); b.textContent = net.active ? "Connected" : "Join"; b.disabled = net.active;
+        b.onclick = async () => {
+          const pw = net.security && net.security !== "Open" ? prompt(`Password for ${net.ssid}`) : "";
+          if (pw === null) return;
+          setNote("net-note", "Connecting…", true);
+          const res = await (await fetch("/api/system/wifi/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ssid: net.ssid, password: pw }) })).json();
+          setNote("net-note", res.message || (res.ok ? "Connected." : "Failed."), res.ok); if (res.ok) loadNet();
+        };
+        row.appendChild(b); list.appendChild(row);
+      });
+      if (!list.children.length) list.innerHTML = '<p style="color:var(--muted)">No networks found.</p>';
+    };
+    $("eth-apply").onclick = async () => {
+      setNote("net-note", "Applying…", true);
+      const res = await (await fetch("/api/system/ethernet", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ iface: $("eth-if").value, mode: $("eth-mode").value, ip: $("eth-ip")?.value || "", gateway: $("eth-gw")?.value || "", dns: $("eth-dns")?.value || "" }) })).json();
+      setNote("net-note", res.message || (res.ok ? "Applied." : "Failed."), res.ok); if (res.ok) loadNet();
+    };
+  }
+
+  function renderUpdates(c) {
+    c.innerHTML = `<h3>DroneDingo software</h3><p id="dd-upd" style="color:var(--muted)">Checking…</p>
+      <div class="form-actions"><button id="dd-check">Check now</button><button class="primary" id="dd-install" hidden>Install update</button></div><pre class="update-log" id="dd-log" hidden></pre>
+      <h3>Operating system</h3><p style="color:var(--muted)">Runs <code>apt update</code> / <code>apt full-upgrade</code>.</p><p id="os-upd" style="color:var(--muted)">Not checked.</p>
+      <div class="form-actions"><button id="os-check">Check OS updates</button><button class="primary" id="os-install" hidden>Install OS updates</button></div>`;
+    const ddCheck = async () => {
+      $("dd-upd").textContent = "Checking…"; $("dd-install").hidden = true;
+      const u = await (await fetch("/api/update/check")).json();
+      $("dd-upd").textContent = u.message + (u.build ? `  (build ${u.build})` : "");
+      $("dd-upd").className = u.available ? "ok" : ""; $("dd-upd").style.color = u.available ? "" : "var(--muted)";
+      if (u.notes) { $("dd-log").hidden = false; $("dd-log").textContent = u.notes; }
+      $("dd-install").hidden = !u.available;
+    };
+    ddCheck().catch(() => {});
+    $("dd-check").onclick = ddCheck;
+    $("dd-install").onclick = async () => {
+      if (!confirm("Install the update and restart DroneDingo now?")) return;
+      $("dd-upd").textContent = "Installing… the service will restart.";
+      try { const r = await (await fetch("/api/update/install", { method: "POST" })).json(); $("dd-log").hidden = false; $("dd-log").textContent = r.output || r.message; $("dd-upd").textContent = r.message; }
+      catch (_) { $("dd-upd").textContent = "Reconnecting after restart…"; setTimeout(() => location.reload(), 8000); }
+    };
+    $("os-check").onclick = async () => {
+      $("os-upd").textContent = "Checking… this can take a minute."; $("os-install").hidden = true;
+      const r = await (await fetch("/api/update/os/check")).json();
+      $("os-upd").textContent = r.message; $("os-install").hidden = !r.upgradable;
+    };
+    $("os-install").onclick = async () => {
+      if (!confirm("Install OS updates now? Can take several minutes.")) return;
+      $("os-upd").textContent = "Installing OS updates…";
+      const r = await (await fetch("/api/update/os/install", { method: "POST" })).json();
+      $("os-upd").textContent = r.message;
+    };
+  }
+
+  async function renderAccount(c) {
+    const who = await fetch("/api/auth/whoami").then(r => r.json()).catch(() => ({}));
+    c.innerHTML = `<p>Signed in as <strong>${esc(who.email || "—")}</strong></p>
+      <h3>Change email</h3><div class="form-grid">${field("New email", "ac-email", "", "email", "you@example.com")}${field("Confirm with password", "ac-emailpw", "", "password")}</div>
+      <div class="form-actions"><button class="primary" id="ac-email-save">Update email</button></div><p id="ac-email-note" class="status-note"></p>
+      <h3>Change password</h3><div class="form-grid">${field("Current password", "ac-cur", "", "password")}${field("New password", "ac-new", "", "password")}</div>
+      <div class="form-actions"><button class="primary" id="ac-pw-save">Update password</button></div><p id="ac-pw-note" class="status-note"></p>
+      <div style="margin-top:18px"><button id="ac-logout">Sign out</button></div>`;
+    $("ac-email-save").onclick = async () => {
+      const r = await (await fetch("/api/auth/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: $("ac-email").value, password: $("ac-emailpw").value }) })).json();
+      setNote("ac-email-note", r.ok ? "Email updated." : (r.error || "Failed."), r.ok);
+    };
+    $("ac-pw-save").onclick = async () => {
+      const r = await (await fetch("/api/auth/password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ current: $("ac-cur").value, new: $("ac-new").value }) })).json();
+      setNote("ac-pw-note", r.ok ? "Password updated." : (r.error || "Failed."), r.ok);
+    };
+    $("ac-logout").onclick = async () => { await fetch("/api/auth/logout", { method: "POST" }); location.href = "/login"; };
+  }
+
+  async function renderAbout(c) {
+    const a = await (await fetch("/api/about")).json();
+    c.innerHTML = `<div class="about-brand"><img class="about-logo" style="height:56px;width:auto" src="/vendor/brand/mark.png" alt=""><span><strong>Drone<span>Dingo</span></strong><small>${esc(a.brand.tagline || "")}</small></span></div>
+      <div class="about-stats"><span><small>Version</small><strong>${esc(a.version.version)}</strong></span><span><small>Build</small><strong>${esc(a.version.build || a.version.channel)}</strong></span><span><small>Node</small><strong>${esc(a.node_id)}</strong></span></div>
+      <p style="color:var(--muted);margin-top:16px">${esc(a.brand.copyright || "")}</p>`;
+    setLogoForTheme();
+  }
+
+  /* ------------------------------ modals ------------------------------ */
+  const layer = () => $("modal-layer");
+  const modals = () => [...document.querySelectorAll(".modal")];
+  function openModal(id) { layer().hidden = false; modals().forEach(m => m.hidden = m.id !== id); }
+  function closeModals() { layer().hidden = true; modals().forEach(m => m.hidden = true); }
+
+  /* ------------------------------ review / playback ------------------------------ */
+  async function enterReview() {
+    state.mode = "review"; $("mode-live").classList.remove("active"); $("mode-review").classList.add("active");
+    $("pb").hidden = false;
+    for (const id of state.contacts.keys()) DDMap.removeContact(id);
+    state.contacts.clear(); renderContacts(); $("alert-strip").hidden = true;
+    await loadReviewWindow();
+  }
+  function enterLive() {
+    state.mode = "live"; $("mode-live").classList.add("active"); $("mode-review").classList.remove("active");
+    $("pb").hidden = true; stopPlay();
+    if (state.review) { DDMap.clearContacts(); state.review = null; }
+    renderContacts();
+  }
+  async function loadReviewWindow() {
+    const win = parseInt($("pb-window").value, 10);
+    const end = Date.now() / 1000, start = end - win;
+    const r = await (await fetch(`/api/detections?start=${start}&end=${end}`)).json();
+    const rows = r.detections || [];
+    const contacts = new Map();
+    for (const d of rows) {
+      if (!contacts.has(d.drone_id)) contacts.set(d.drone_id, { rows: [], model: d.model });
+      contacts.get(d.drone_id).rows.push(d);
+    }
+    DDMap.clearContacts();
+    state.review = { start, end, contacts, playhead: start, playing: false };
+    renderReviewAt(start);
+  }
+  function renderReviewAt(t) {
+    if (!state.review) return;
+    for (const [id, c] of state.review.contacts) {
+      const upto = c.rows.filter(r => r.ts <= t);
+      DDMap.setTrack(id, upto.filter(r => r.drone_lat != null).map(r => [r.drone_lat, r.drone_lon]));
+      const last = upto[upto.length - 1];
+      if (last && (t - last.ts) < 20 && last.drone_lat != null) {
+        DDMap.upsertDrone(id, last.drone_lat, last.drone_lon, last.heading_deg, false, `${c.model || "Drone"}`, () => openDetail(id));
+        if (last.operator_lat != null) DDMap.upsertOperator(id, last.operator_lat, last.operator_lon);
+      } else DDMap.hideMarkers(id);
+    }
+    const frac = (t - state.review.start) / (state.review.end - state.review.start);
+    $("pb-scrub").value = Math.round(frac * 1000);
+    $("pb-time").textContent = new Date(t * 1000).toLocaleTimeString("en-AU", { hour12: false });
+  }
+  let playTimer = null;
+  function togglePlay() { state.review && (state.review.playing ? stopPlay() : startPlay()); }
+  function startPlay() {
+    if (!state.review) return; state.review.playing = true; $("pb-play").textContent = "⏸";
+    const speed = parseInt($("pb-speed").value, 10);
+    playTimer = setInterval(() => {
+      if (!state.review) return stopPlay();
+      state.review.playhead += speed;
+      if (state.review.playhead >= state.review.end) { state.review.playhead = state.review.end; renderReviewAt(state.review.playhead); return stopPlay(); }
+      renderReviewAt(state.review.playhead);
+    }, 250);
+  }
+  function stopPlay() { if (playTimer) clearInterval(playTimer); playTimer = null; if (state.review) state.review.playing = false; const p = $("pb-play"); if (p) p.textContent = "▶"; }
+
+  /* ------------------------------ wiring ------------------------------ */
   function wireUI() {
-    $("btnSettings").onclick = () => openSettings();
-    $("btnCloseSettings").onclick = closeSettings;
-    $("btnSaveHome").onclick = saveHome;
-    $("btnTheme").onclick = toggleTheme;
-    // admin tabs
-    document.querySelectorAll(".admin-tab").forEach((b) =>
-      b.onclick = () => showTab(b.dataset.tab));
-    // alerts
-    $("btnTestAlert").onclick = sendTestAlert;
-    $("btnSaveAlerts").onclick = saveAlerts;
-    // system
-    $("btnRefreshSys").onclick = loadSystem;
-    $("btnReboot").onclick = doReboot;
-    // network
-    $("btnWifiScan").onclick = wifiScan;
-    $("btnWifiJoin").onclick = wifiJoin;
-    $("btnWifiCancel").onclick = () => { $("wifiConnect").hidden = true; };
-    $("btnEthApply").onclick = applyEthernet;
-    $("ethMode").onchange = () => { $("ethStatic").hidden = $("ethMode").value !== "static"; };
-    // updates
-    $("btnCheckUpdate").onclick = checkUpdate;
-    $("btnInstallUpdate").onclick = installUpdate;
-    $("btnCheckOS").onclick = checkOS;
-    $("btnInstallOS").onclick = installOS;
-    // account
-    $("btnChangeEmail").onclick = changeEmail;
-    $("btnChangePw").onclick = changePassword;
-    $("btnLogout").onclick = logout;
-    $("btnUseMap").onclick = () => { state.pickingHome = true; $("settingsModal").hidden = true;
-      $("homeHint").textContent = "Click the map to drop the marker…"; };
-    $("btnLive").onclick = enterLive;
-    $("btnReview").onclick = enterReview;
-    $("btnPlay").onclick = togglePlay;
-    $("btnRefreshEvents").onclick = loadEvents;
-    $("pbWindow").onchange = loadReviewWindow;
-    $("scrubber").oninput = (e) => {
-      if (!state.review) return;
-      stopPlay();
-      const frac = e.target.value / 1000;
-      state.review.playhead = state.review.start + frac * (state.review.end - state.review.start);
+    $("settings-open").onclick = () => { openModal("settings-modal"); renderSettings("Location"); };
+    $("sightings-open").onclick = () => { state.page = 0; renderSightings(); openModal("sightings-modal"); };
+    $("theme-toggle").onclick = toggleTheme;
+    document.querySelectorAll(".close-modal").forEach(b => b.addEventListener("click", closeModals));
+    layer().addEventListener("click", (e) => { if (e.target === layer()) closeModals(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModals(); });
+    $("detail-history").onclick = () => { state.page = 0; renderSightings(); openModal("sightings-modal"); };
+    $("page-prev").onclick = () => { state.page--; renderSightings(); };
+    $("page-next").onclick = () => { state.page++; renderSightings(); };
+    $("mode-live").onclick = enterLive;
+    $("mode-review").onclick = enterReview;
+    $("pb-play").onclick = togglePlay;
+    $("pb-window").onchange = loadReviewWindow;
+    $("pb-scrub").oninput = (e) => {
+      if (!state.review) return; stopPlay();
+      state.review.playhead = state.review.start + (e.target.value / 1000) * (state.review.end - state.review.start);
       renderReviewAt(state.review.playhead);
     };
   }
 
-  /* ---------------------------- utils ---------------------------- */
-  function tickClock() { $("clock").textContent = new Date().toLocaleTimeString(); }
-  function clockOf(ts) { return new Date(ts * 1000).toLocaleTimeString(); }
-  function num(v) { return v == null ? "—" : (Math.round(v * 10) / 10); }
-  function esc(s) { return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-  function fmtDist(m) { if (m == null) return "—"; return m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m"; }
-  function fmtDur(s) { const m = Math.floor(s / 60), r = s % 60; return m ? `${m}m ${r}s` : `${r}s`; }
-
+  /* ------------------------------ clock / geo ------------------------------ */
+  function tickClock() {
+    const now = new Date();
+    $("clock").textContent = now.toLocaleTimeString("en-AU", { hour12: false });
+    $("current-date").textContent = now.toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  }
   const R = 6371000, rad = (d) => d * Math.PI / 180;
   function haversine(a, b, c, d) {
-    const p1 = rad(a), p2 = rad(c), dp = rad(c - a), dl = rad(d - b);
-    const x = Math.sin(dp / 2) ** 2 + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(x));
+    const dφ = rad(c - a), dλ = rad(d - b);
+    const s = Math.sin(dφ / 2) ** 2 + Math.cos(rad(a)) * Math.cos(rad(c)) * Math.sin(dλ / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(s));
   }
-  function bearing(a, b, c, d) {
-    const p1 = rad(a), p2 = rad(c), dl = rad(d - b);
-    const y = Math.sin(dl) * Math.cos(p2);
-    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
-    return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-  }
-  const DIRS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
-  function compass16(b) { return DIRS[Math.round(b / 22.5) % 16]; }
 
-  boot();
+  document.addEventListener("DOMContentLoaded", boot);
 })();
