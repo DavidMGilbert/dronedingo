@@ -2,9 +2,16 @@
 # ============================================================================
 #  DroneDingo — single-command installer for Raspberry Pi OS (Trixie) Lite 64-bit
 #
+#  While the repo is PRIVATE, clone it on the Pi (with your GitHub credentials)
+#  then run the installer from the clone — this uses the local working tree and
+#  needs no further repo access:
+#
+#      git clone https://github.com/DavidMGilbert/dronedingo.git
+#      cd dronedingo && sudo bash deploy/install.sh
+#
+#  (The curl one-liner below only works once the repo is public or the script is
+#  served from your own host.)
 #      curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/dronedingo/main/deploy/install.sh | sudo bash
-#  or, from a clone:
-#      sudo bash deploy/install.sh
 #
 #  Installs and configures everything and leaves the appliance running.
 #  All third-party stacks install quietly in the background; progress is shown
