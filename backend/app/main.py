@@ -61,6 +61,7 @@ async def lifespan(app: FastAPI):
     await db.init()
     _open_basemap()
     push.ensure_keys()          # generate the VAPID key pair on first run
+    push.start_poller()         # collect device registrations from the relay
     await manager.start()
     prune_task = asyncio.create_task(_prune_loop())
     log.info("DroneDingo online — UI at http://%s:%s",
@@ -318,7 +319,8 @@ async def api_push_pubkey():
 async def api_push_status():
     p = cfg.load().get("push") or {}
     return {"enabled": push.enabled(), "devices": push.subscription_count(),
-            "public_url": p.get("public_url")}
+            "public_url": p.get("public_url") or p.get("relay_url"),
+            "node": cfg.get_node_id(), "pubkey": push.public_key_b64()}
 
 
 @app.post("/api/push/reg-token")

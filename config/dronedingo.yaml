@@ -101,6 +101,13 @@ push:
   # origin the dashboard is open on — which only works if that is https.
   public_url: null
 
+  # notify.dronedingo.com.au relay (see notify-site/). When set, the QR points
+  # phones at the relay and the appliance polls it for their subscriptions, then
+  # sends push DIRECTLY — detection data never touches the relay. Usually the
+  # same host as public_url. relay_key is the shared secret set on the relay.
+  relay_url: null            # e.g. "https://notify.dronedingo.com.au"
+  relay_key: null            # shared secret matching the relay's RELAY_KEY
+
 updates:
   # Production appliances update from the website (see docs/UPDATE_PROTOCOL.md).
   # Set check_url to switch from the git-checkout dev flow to signed releases.

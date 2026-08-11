@@ -1,0 +1,15 @@
+# notify.dronedingo.com.au — Apache config.
+# The service worker must control the whole origin, so keep it at the root.
+
+# Never cache the service worker or the app shell (so updates land immediately).
+<FilesMatch "^(sw\.js|app\.js|index\.html)$">
+  Header set Cache-Control "no-cache, must-revalidate"
+</FilesMatch>
+
+# Block direct access to the shared include files.
+<FilesMatch "^_(config|db)\.php$">
+  Require all denied
+</FilesMatch>
+
+# Correct MIME for the web app manifest.
+AddType application/manifest+json .webmanifest

@@ -232,3 +232,82 @@ def notify(title: str, body: str, data: dict | None = None) -> dict:
 
 def enabled() -> bool:
     return bool((cfg.load().get("push") or {}).get("enabled", True))
+
+
+# --------------------------------------------------------------------------
+# relay poller — collect subscriptions registered via notify.dronedingo.com.au
+# --------------------------------------------------------------------------
+def _relay() -> tuple[str, str]:
+    p = cfg.load().get("push") or {}
+    base = (p.get("relay_url") or p.get("public_url") or "").rstrip("/")
+    return base, (p.get("relay_key") or "")
+
+
+def _relay_post(path: str, payload: dict, timeout: int = 15) -> dict:
+    base, _ = _relay()
+    req = urllib.request.Request(base + path, method="POST",
+                                 data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def poll_relay_once() -> int:
+    """Fetch subscriptions parked for this node, ingest the valid ones, ack all.
+    A subscription is only accepted if its one-time token was minted here."""
+    base, key = _relay()
+    if not base or not key:
+        return 0
+    node = cfg.get_node_id()
+    try:
+        data = _relay_post("/api/pending.php", {"node": node, "key": key})
+    except Exception as exc:
+        log.debug("relay poll failed: %s", exc)
+        return 0
+    pending = data.get("pending") or []
+    if not pending:
+        return 0
+
+    ack_ids, welcomed = [], []
+    for row in pending:
+        if row.get("id"):
+            ack_ids.append(row["id"])
+        if not check_reg_token(row.get("token", "")):
+            continue                      # junk or expired token — dropped on ack
+        try:
+            add_subscription(row["subscription"])
+            welcomed.append(row["subscription"])
+        except Exception:
+            pass
+    try:
+        _relay_post("/api/ack.php", {"key": key, "ids": ack_ids})
+    except Exception as exc:
+        log.debug("relay ack failed: %s", exc)
+
+    for sub in welcomed:                  # confirm on the newly-registered phone
+        try:
+            _send_one(sub, json.dumps({"title": "DroneDingo",
+                                       "body": "Alerts enabled on this phone."}).encode())
+        except Exception:
+            pass
+    if welcomed:
+        log.info("registered %d device(s) via relay", len(welcomed))
+    return len(welcomed)
+
+
+def start_poller() -> None:
+    base, key = _relay()
+    if not (base and key):
+        log.info("DroneDingo Push relay not configured; devices register locally only")
+        return
+
+    def _loop():
+        while True:
+            try:
+                poll_relay_once()
+            except Exception as exc:
+                log.warning("relay poller error: %s", exc)
+            time.sleep(20)
+
+    threading.Thread(target=_loop, name="push-relay-poller", daemon=True).start()
+    log.info("DroneDingo Push relay poller started -> %s", base)

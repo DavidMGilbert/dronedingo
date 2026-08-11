@@ -368,13 +368,22 @@
     $("push-add").onclick = async () => {
       try {
         const { token } = await (await fetch("/api/push/reg-token", { method: "POST" })).json();
-        const base = (pushStatus.public_url || location.origin).replace(/\/$/, "");
-        const url = `${base}/push?t=${token}`;
+        let url, base;
+        if (pushStatus.public_url) {
+          // Registration via the relay (notify.dronedingo.com.au): carries the
+          // node id and the appliance's VAPID key so the phone subscribes to us.
+          base = pushStatus.public_url.replace(/\/$/, "");
+          url = `${base}/?node=${encodeURIComponent(pushStatus.node)}&t=${token}&k=${pushStatus.pubkey}`;
+        } else {
+          // Appliance-hosted PWA (needs the appliance itself on https).
+          base = location.origin;
+          url = `${base}/push?t=${token}`;
+        }
         $("push-url").textContent = url;
         if (window.DDQR) $("push-qr").innerHTML = window.DDQR.svg(url, 134);
         $("push-qr-wrap").hidden = false;
         if (!/^https:/.test(base) && !/^http:\/\/localhost/.test(base))
-          setNote("push-note", "Note: phones need an https:// address — set push.public_url in config.", false);
+          setNote("push-note", "Phones need an https:// address — set push.public_url / relay_url in config.", false);
       } catch (_) { setNote("push-note", "Could not create a registration link.", false); }
     };
     $("push-test").onclick = async () => {

@@ -1,0 +1,14 @@
+{
+  "name": "DroneDingo Alerts",
+  "short_name": "DroneDingo",
+  "description": "Drone detection alerts for your property",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#061416",
+  "theme_color": "#0c2224",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
