@@ -1,0 +1,11 @@
+# --- Core (runs the appliance + simulator on any platform) ---
+fastapi>=0.111
+uvicorn[standard]>=0.30
+pyyaml>=6.0
+aiosqlite>=0.20
+
+# --- Hardware capture (install on the Pi as the radios are added) ---
+# scapy>=2.5          # WiFi Remote ID / DJI DroneID sniffing (monitor-mode adapter)
+# bleak>=0.22         # Bluetooth Remote ID
+# pyrtlsdr>=0.3       # RTL-SDR presence scanning (needs system librtlsdr)
+# numpy>=1.26         # FFT for RTL-SDR power detection

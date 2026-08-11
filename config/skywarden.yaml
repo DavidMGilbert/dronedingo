@@ -1,0 +1,61 @@
+# ============================================================================
+#  SkyWarden — appliance configuration
+#  Edit brand.product_name to re-badge the whole UI in one place.
+# ============================================================================
+
+brand:
+  product_name: "SkyWarden"
+  tagline: "Know what's in your sky."
+  accent: "#38e8b0"          # primary accent colour (hex)
+  accent_alt: "#ffb454"      # secondary / alert accent
+
+site:
+  node_id: "warden-01"       # unique id for this receiver node
+  home:
+    label: "Home Base"
+    lat: 52.2405              # default map centre; override from the UI
+    lon: -0.9027
+    set: false               # becomes true once configured from the UI
+
+map:
+  # Online default. For offline farms, point this at a locally served tile
+  # cache (see docs/OFFLINE_MAPS.md) and the UI needs no code changes.
+  tile_url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+  max_zoom: 19
+  default_zoom: 15
+  # Alert range rings drawn around Home Base, in metres.
+  range_rings_m: [250, 500, 1000]
+
+sources:
+  # ---- Identity + position (2.4/5.8 GHz Remote ID & DJI DroneID) ----------
+  simulator:
+    enabled: true             # synthetic traffic so the UI runs with no radios
+  wifi_remoteid:
+    enabled: false
+    interface: "wlan1"        # must support monitor mode
+  bt_remoteid:
+    enabled: false
+    adapter: "hci0"
+  # ---- Presence-only backstop (sub-1.7 GHz, RTL-SDR) ----------------------
+  rtlsdr_scan:
+    enabled: false
+    device_index: 0
+    gain: "auto"
+    dwell_s: 0.25             # seconds sampled per band
+    trigger_db: 8.0           # dB above noise floor to declare a hit
+    bands:
+      - { name: "433 MHz telemetry",   start: 433050000,  stop: 434790000 }
+      - { name: "900 MHz control",     start: 902000000,  stop: 928000000 }
+      - { name: "1.2 GHz analog video", start: 1240000000, stop: 1300000000 }
+
+alerts:
+  # Fired when a contact enters the innermost range ring.
+  quiet_hours: null           # e.g. "22:00-06:00" to suppress low-priority pings
+  ntfy_topic: null            # set to a ntfy.sh topic for free phone push
+  webhook_url: null           # optional POST target for external integrations
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+retention_days: 90            # detections older than this are pruned
