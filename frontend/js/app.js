@@ -359,7 +359,7 @@
 
   async function renderSystem(c) {
     c.innerHTML = `<div id="sys-body"><p style="color:var(--muted)">Loading…</p></div>
-      <div class="form-actions"><button id="sys-refresh">Refresh</button><button id="sys-reboot">Reboot appliance</button></div>
+      <div class="form-actions"><button id="sys-refresh">Refresh</button><button id="sys-reboot">Reboot</button></div>
       <p id="sys-note" class="status-note"></p>`;
     const load = async () => {
       const s = await (await fetch("/api/system/status")).json();
