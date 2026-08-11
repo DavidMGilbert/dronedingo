@@ -311,7 +311,18 @@
   }
 
   async function renderAlerts(c) {
-    c.innerHTML = `<p>Phone alerts fire when a drone comes within the alert range of Home Base. Register a phone by scanning the QR in the ntfy app.</p>
+    c.innerHTML = `<p>Phone alerts fire when a drone comes within the alert range of Home Base.</p>
+      <h3>DroneDingo Push <span style="color:var(--vfd);font-size:12px">recommended</span></h3>
+      <p style="color:var(--muted);font-size:13px">Proprietary, end-to-end encrypted alerts sent straight from this appliance — no third-party app, no Apple/Google account. <b id="push-count" style="color:var(--text)"></b></p>
+      <div id="push-qr-wrap" hidden style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:10px 0">
+        <div id="push-qr" style="width:150px;height:150px;background:#fff;border-radius:12px;padding:8px"></div>
+        <div style="min-width:180px;color:var(--muted);font-size:13px">On the phone: scan with the camera, open the link, tap <b>Enable alerts</b>. Link valid ~15 min.<br><span id="push-url" style="color:var(--text);word-break:break-all;font-size:11px"></span></div>
+      </div>
+      <div class="form-actions"><button id="push-add">Add a phone</button><button id="push-test">Send test push</button></div>
+      <p id="push-note" class="status-note"></p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:22px 0 16px">
+      <h3>ntfy <span style="color:var(--muted);font-size:12px">alternative</span></h3>
+      <p style="color:var(--muted);font-size:13px">Uses the ntfy app + a broker (public ntfy.sh or your own). Scan the QR in the ntfy app.</p>
       <div id="alert-qr-wrap" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <div id="alert-qr" style="width:132px;height:132px;background:#fff;border-radius:12px;padding:8px"></div>
         <div style="min-width:180px;color:var(--muted);font-size:13px">Scan to subscribe a device to this appliance's alert channel. <br><b id="alert-topic-txt" style="color:var(--text)"></b></div>
@@ -345,6 +356,31 @@
       setNote("al-note", "Sending…", true);
       const r = await (await fetch("/api/alerts/test", { method: "POST" })).json();
       setNote("al-note", r.ok ? "Test sent — check your phone." : ("Failed: " + r.error), r.ok);
+    };
+
+    // --- DroneDingo Push ---
+    let pushStatus = { devices: 0, public_url: null };
+    try {
+      pushStatus = await (await fetch("/api/push/status")).json();
+      $("push-count").textContent = pushStatus.devices
+        ? `${pushStatus.devices} device(s) registered.` : "No devices registered yet.";
+    } catch (_) {}
+    $("push-add").onclick = async () => {
+      try {
+        const { token } = await (await fetch("/api/push/reg-token", { method: "POST" })).json();
+        const base = (pushStatus.public_url || location.origin).replace(/\/$/, "");
+        const url = `${base}/push?t=${token}`;
+        $("push-url").textContent = url;
+        if (window.DDQR) $("push-qr").innerHTML = window.DDQR.svg(url, 134);
+        $("push-qr-wrap").hidden = false;
+        if (!/^https:/.test(base) && !/^http:\/\/localhost/.test(base))
+          setNote("push-note", "Note: phones need an https:// address — set push.public_url in config.", false);
+      } catch (_) { setNote("push-note", "Could not create a registration link.", false); }
+    };
+    $("push-test").onclick = async () => {
+      setNote("push-note", "Sending…", true);
+      const r = await (await fetch("/api/push/test", { method: "POST" })).json();
+      setNote("push-note", r.ok ? `Sent to ${r.sent} device(s).` : (r.message || "No devices registered."), r.ok);
     };
   }
   function drawAlertQR() {

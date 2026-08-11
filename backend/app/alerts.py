@@ -16,6 +16,8 @@ import time
 import urllib.request
 from datetime import datetime, time as dtime
 
+from . import push
+
 log = logging.getLogger("dronedingo")
 
 _TIMEOUT = 8.0
@@ -57,7 +59,13 @@ class Alerter:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.topic or self.webhook)
+        # Fire if any channel is live: ntfy, webhook, or a registered push device.
+        if self.topic or self.webhook:
+            return True
+        try:
+            return push.enabled() and push.subscription_count() > 0
+        except Exception:
+            return False
 
     def _should_fire(self, drone_id: str, range_m: float | None) -> bool:
         if range_m is None or range_m > self.ring_m:
@@ -105,6 +113,15 @@ class Alerter:
 
     def _dispatch(self, det: dict) -> None:
         title, body = self._compose(det)
+        # DroneDingo Push — proprietary, appliance-direct, end-to-end encrypted.
+        try:
+            if push.enabled() and push.subscription_count() > 0:
+                push.notify(title, body, {
+                    "range_m": det.get("range_m"), "compass": det.get("compass"),
+                    "operator_lat": det.get("operator_lat"),
+                    "operator_lon": det.get("operator_lon")})
+        except Exception as exc:
+            log.warning("DroneDingo Push delivery failed: %s", exc)
         if self.topic:
             try:
                 self._send_ntfy(title, body, det)

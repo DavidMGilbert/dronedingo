@@ -89,6 +89,18 @@ alerts:
   # alerts unless you explicitly opt in here.
   quiet_hours_suppress: false
 
+push:
+  # DroneDingo Push — proprietary, appliance-direct, end-to-end encrypted phone
+  # alerts (Web Push). No ntfy, no app store, no Apple/Google developer account.
+  # The VAPID key pair is generated on first run and kept in data/state.json.
+  enabled: true
+  subject: "mailto:admin@dronedingo.com.au"   # VAPID contact (per RFC 8292)
+  # Base URL a phone uses to open the registration PWA. Web Push REQUIRES HTTPS,
+  # so this must be an https:// origin the phone trusts (the appliance's own
+  # https address, or your hosted alerts site). If null, the QR uses whatever
+  # origin the dashboard is open on — which only works if that is https.
+  public_url: null
+
 updates:
   # Production appliances update from the website (see docs/UPDATE_PROTOCOL.md).
   # Set check_url to switch from the git-checkout dev flow to signed releases.

@@ -17,7 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import config as cfg
-from . import auth, system, updater
+from . import auth, system, updater, push
 from .db import DB
 from .hub import Hub
 from .manager import Manager
@@ -60,6 +60,7 @@ def _open_basemap() -> None:
 async def lifespan(app: FastAPI):
     await db.init()
     _open_basemap()
+    push.ensure_keys()          # generate the VAPID key pair on first run
     await manager.start()
     prune_task = asyncio.create_task(_prune_loop())
     log.info("DroneDingo online — UI at http://%s:%s",
@@ -83,8 +84,11 @@ app = FastAPI(title="DroneDingo", lifespan=lifespan)
 _AUTH_ENABLED = bool((cfg.load().get("auth") or {}).get("enabled", True))
 _SESSION_HOURS = int((cfg.load().get("auth") or {}).get("session_hours", 168))
 
-# Paths reachable without a session: the login flow and unbranded static assets.
-_PUBLIC_PREFIXES = ("/login", "/api/auth", "/css/", "/js/", "/vendor/", "/favicon")
+# Paths reachable without a session: the login flow, unbranded static assets,
+# and the device push-registration PWA (which authenticates with a reg token).
+_PUBLIC_PREFIXES = ("/login", "/api/auth", "/css/", "/js/", "/vendor/", "/favicon",
+                    "/push", "/api/push/pubkey", "/api/push/subscribe",
+                    "/api/push/unsubscribe")
 
 
 def _is_public(path: str) -> bool:
@@ -302,6 +306,54 @@ async def api_alerts_config_save(payload: dict):
 @app.post("/api/alerts/test")
 async def api_alerts_test():
     return await asyncio.to_thread(manager.alerter.test)
+
+
+# ----------------------------- DroneDingo Push -----------------------------
+@app.get("/api/push/pubkey")
+async def api_push_pubkey():
+    return {"key": push.public_key_b64()}
+
+
+@app.get("/api/push/status")
+async def api_push_status():
+    p = cfg.load().get("push") or {}
+    return {"enabled": push.enabled(), "devices": push.subscription_count(),
+            "public_url": p.get("public_url")}
+
+
+@app.post("/api/push/reg-token")
+async def api_push_reg_token():
+    """Mint a short-lived token that lets a phone register via the QR."""
+    return {"token": push.new_reg_token()}
+
+
+@app.post("/api/push/subscribe")
+async def api_push_subscribe(request: Request, payload: dict):
+    if not (request.session.get("uid") or push.check_reg_token(payload.get("token", ""))):
+        return JSONResponse({"ok": False, "error": "registration link expired — reopen the QR"}, status_code=401)
+    try:
+        push.add_subscription(payload)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return {"ok": True}
+
+
+@app.post("/api/push/unsubscribe")
+async def api_push_unsubscribe(payload: dict):
+    push.remove_subscription(payload.get("endpoint", ""))
+    return {"ok": True}
+
+
+@app.post("/api/push/test")
+async def api_push_test():
+    return await asyncio.to_thread(
+        push.notify, "DroneDingo test alert",
+        "If you can read this, DroneDingo Push is working.", {"test": True})
+
+
+@app.get("/push")
+async def push_pwa():
+    return FileResponse(FRONTEND / "push" / "index.html")
 
 
 # ----------------------------- System / admin ------------------------------
