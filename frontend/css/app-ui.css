@@ -4,6 +4,25 @@
    the logo image, and the review scrubber. Loaded after the concept CSS.
    ========================================================================== */
 
+/* Uniform frosted glass (replaces the concept's diagonal gradient, which showed
+   a hard seam over the real map — the legend "css error"). Consistent tint,
+   translucent, blurred. */
+.glass {
+  background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 1px 1px rgba(255, 255, 255, .07), 0 12px 30px var(--shadow);
+  backdrop-filter: blur(22px) saturate(140%);
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+}
+
+/* Firmware (apt) progress bar */
+.apt-bar { width: 100%; height: 8px; margin: 8px 0 2px; border: 0; border-radius: 999px; }
+.apt-bar[hidden] { display: none; }
+.apt-bar::-webkit-progress-bar { background: var(--surface-soft); border-radius: 999px; }
+.apt-bar::-webkit-progress-value { background: var(--orange); border-radius: 999px; }
+.apt-bar:indeterminate { background: linear-gradient(90deg, var(--surface-soft) 30%, var(--orange) 50%, var(--surface-soft) 70%) repeat; background-size: 200% 100%; animation: apt-slide 1.1s linear infinite; }
+@keyframes apt-slide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
 /* Real map fills the map panel; legend/controls float over it. */
 .map-panel { position: relative; }
 #map { position: absolute; inset: 0; background: var(--map, #102d2b); }
@@ -16,8 +35,8 @@
 /* Contacts panel helpers */
 #contacts-empty { padding: 10px 4px; color: var(--muted); font-size: 13px; }
 .contacts-panel .panel-heading span { text-transform: none; letter-spacing: 0; }
-#basemap-info { color: var(--muted); }
-#basemap-info.offline-ok { color: var(--vfd); }
+/* Home dot in the legend matches the map's home marker. */
+.legend-home { width: 9px; height: 9px; border-radius: 50%; background: var(--home, #4E6BE6); }
 
 /* ---- MapLibre markers restyled to the concept's target look ---- */
 .drone-marker {

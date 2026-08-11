@@ -266,9 +266,9 @@
   }
 
   async function showBasemapInfo() {
+    const el = $("basemap-info"); if (!el) return;   // legend kept clean; info lives elsewhere
     try {
       const i = await (await fetch("/api/map/info")).json();
-      const el = $("basemap-info");
       el.textContent = i.offline ? `Offline · ${i.vector ? "vector" : "raster"}` : "Online basemap";
       el.classList.toggle("offline-ok", !!i.offline);
     } catch (_) {}
@@ -373,7 +373,7 @@
       const loadPct = s.load && s.cpu_count ? (s.load[0] / s.cpu_count) * 100 : 0;
       $("sys-body").innerHTML =
         `<div class="about-stats" style="margin-bottom:14px"><span><small>Host</small><strong>${esc(s.hostname || "—")}</strong></span>`
-        + `<span><small>Model</small><strong>${esc(s.pi_model || "—")}</strong></span>`
+        + `<span><small>Model</small><strong title="${esc(s.pi_model || "")}">${esc(state.cfg?.brand?.model || "DroneDingo")}</strong></span>`
         + `<span><small>Service</small><strong>${esc(s.service || "—")}</strong></span></div>` + thr
         + bar("Memory", memPct, s.memory && s.memory.total ? memPct + "%" : "—")
         + bar("CPU load", loadPct, s.load ? s.load[0] : "—")
@@ -441,8 +441,11 @@
   function renderUpdates(c) {
     c.innerHTML = `<h3>DroneDingo software</h3><p id="dd-upd" style="color:var(--muted)">Checking…</p>
       <div class="form-actions"><button id="dd-check">Check now</button><button class="primary" id="dd-install" hidden>Install update</button></div><pre class="update-log" id="dd-log" hidden></pre>
-      <h3>Operating system</h3><p style="color:var(--muted)">Runs <code>apt update</code> / <code>apt full-upgrade</code>.</p><p id="os-upd" style="color:var(--muted)">Not checked.</p>
-      <div class="form-actions"><button id="os-check">Check OS updates</button><button class="primary" id="os-install" hidden>Install OS updates</button></div>`;
+      <h3>Firmware</h3><p style="color:var(--muted)">Device firmware is applied through the system package manager.</p>
+      <p id="os-upd" style="color:var(--muted)">Not checked.</p>
+      <progress id="os-bar" class="apt-bar" hidden></progress>
+      <div class="form-actions"><button id="os-check">Check firmware updates</button><button class="primary" id="os-install" hidden>Install firmware updates</button></div>
+      <pre class="update-log" id="os-log" hidden></pre>`;
     const ddCheck = async () => {
       $("dd-upd").textContent = "Checking…"; $("dd-install").hidden = true;
       const u = await (await fetch("/api/update/check")).json();
@@ -460,15 +463,25 @@
       catch (_) { $("dd-upd").textContent = "Reconnecting after restart…"; setTimeout(() => location.reload(), 8000); }
     };
     $("os-check").onclick = async () => {
-      $("os-upd").textContent = "Checking… this can take a minute."; $("os-install").hidden = true;
-      const r = await (await fetch("/api/update/os/check")).json();
-      $("os-upd").textContent = r.message; $("os-install").hidden = !r.upgradable;
+      $("os-upd").textContent = "Checking for firmware updates…"; $("os-install").hidden = true;
+      $("os-bar").hidden = false; $("os-bar").removeAttribute("value");   // indeterminate
+      try {
+        const r = await (await fetch("/api/update/os/check")).json();
+        $("os-upd").textContent = r.message; $("os-install").hidden = !r.upgradable;
+      } finally { $("os-bar").hidden = true; }
     };
     $("os-install").onclick = async () => {
-      if (!confirm("Install OS updates now? Can take several minutes.")) return;
-      $("os-upd").textContent = "Installing OS updates…";
-      const r = await (await fetch("/api/update/os/install", { method: "POST" })).json();
-      $("os-upd").textContent = r.message;
+      if (!confirm("Install firmware updates now? This can take several minutes and the appliance may restart.")) return;
+      $("os-upd").textContent = "Installing firmware… do not power off.";
+      $("os-log").hidden = true;
+      $("os-bar").hidden = false; $("os-bar").removeAttribute("value");   // animated during apt
+      try {
+        const r = await (await fetch("/api/update/os/install", { method: "POST" })).json();
+        $("os-upd").textContent = r.message;
+        if (r.output) { $("os-log").hidden = false; $("os-log").textContent = r.output; }
+      } catch (_) {
+        $("os-upd").textContent = "Firmware update interrupted — the appliance may be restarting.";
+      } finally { $("os-bar").hidden = true; }
     };
   }
 
