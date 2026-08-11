@@ -10,14 +10,16 @@ import logging
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import config as cfg
 from .db import DB
 from .hub import Hub
 from .manager import Manager
+from .mapstyle import build_style
+from .tiles import TileStore
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -29,11 +31,31 @@ FRONTEND = BASE / "frontend"
 db = DB()
 hub = Hub()
 manager = Manager(db, hub)
+tile_store: TileStore | None = None
+
+
+def _open_basemap() -> None:
+    """Open the offline basemap if one is configured and present."""
+    global tile_store
+    basemap = (cfg.load().get("map", {}).get("basemap") or {})
+    path = basemap.get("path")
+    if not path:
+        return
+    p = Path(path)
+    if not p.is_absolute():
+        p = BASE / p
+    try:
+        tile_store = TileStore(p)
+    except Exception as exc:
+        # A missing basemap must not stop the appliance — fall back online.
+        log.warning("offline basemap unavailable (%s); using online tiles", exc)
+        tile_store = None
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     await db.init()
+    _open_basemap()
     await manager.start()
     prune_task = asyncio.create_task(_prune_loop())
     log.info("DroneDingo online — UI at http://%s:%s",
@@ -96,6 +118,41 @@ async def api_bounds():
     b = await db.bounds()
     b["now"] = time.time()
     return b
+
+
+@app.get("/api/map/style")
+async def api_map_style(request: Request):
+    """MapLibre style, generated from the brand palette + basemap source."""
+    style = build_style(cfg.load(), tile_store)
+    # Tile URLs must be absolute for MapLibre; fill in this request's origin.
+    origin = str(request.base_url).rstrip("/")
+    for src in style.get("sources", {}).values():
+        if "tiles" in src:
+            src["tiles"] = [t.replace("{origin}", origin) for t in src["tiles"]]
+    return JSONResponse(style)
+
+
+@app.get("/api/map/info")
+async def api_map_info():
+    if tile_store is None:
+        return {"offline": False, "source": "online raster tiles"}
+    return {
+        "offline": True, "file": tile_store.path.name,
+        "format": tile_store.tile_format, "vector": tile_store.is_vector,
+        "minzoom": tile_store.minzoom, "maxzoom": tile_store.maxzoom,
+    }
+
+
+@app.get("/tiles/{z}/{x}/{y}")
+async def api_tile(z: int, x: int, y: int):
+    if tile_store is None:
+        return Response(status_code=404)
+    data = await asyncio.to_thread(tile_store.get, z, x, y)
+    if data is None:
+        # An absent tile is normal (sparse extract) — 204 keeps MapLibre quiet.
+        return Response(status_code=204)
+    return Response(content=data, media_type=tile_store.content_type,
+                    headers={"Cache-Control": "public, max-age=604800"})
 
 
 @app.get("/api/alerts")

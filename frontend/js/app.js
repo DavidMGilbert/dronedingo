@@ -5,15 +5,10 @@
   "use strict";
 
   const $ = (id) => document.getElementById(id);
-  const DRONE_SVG = '<svg class="glyph" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 4.8L20 8l-3.6 3.2L17 17l-5-2.6L7 17l.6-5.8L4 8l5.6-1.2z"/></svg>';
-  const OP_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="12" cy="7" r="3.4"/><path d="M4.5 20c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5z"/></svg>';
 
   const state = {
     cfg: null,
-    map: null,
     home: null,
-    homeMarker: null,
-    rings: [],
     contacts: new Map(),   // drone_id -> contact object (LIVE)
     focused: null,
     mode: "live",          // "live" | "review"
@@ -30,7 +25,7 @@
     state.cfg = await (await fetch("/api/config")).json();
     applyBrand(state.cfg.brand);
     state.home = state.cfg.site.home;
-    initMap();
+    await initMap();
     wireUI();
     connectWS();
     tickClock();
@@ -61,41 +56,35 @@
   }
 
   /* ---------------------------- map ---------------------------- */
-  function initMap() {
-    const m = state.cfg.map;
-    state.map = L.map("map", { zoomControl: true, attributionControl: false })
-      .setView([state.home.lat, state.home.lon], m.default_zoom);
-    L.tileLayer(m.tile_url, { maxZoom: m.max_zoom }).addTo(state.map);
+  async function initMap() {
+    await DDMap.init({
+      container: "map",
+      center: { lat: state.home.lat, lon: state.home.lon },
+      zoom: state.cfg.map.default_zoom,
+      onClick: (lat, lon) => {
+        if (state.pickingHome) setHomeFromLatLng(lat, lon);
+      },
+    });
     drawHome();
-    state.map.on("click", (e) => {
-      if (state.pickingHome) setHomeFromLatLng(e.latlng.lat, e.latlng.lng);
-    });
-  }
-
-  function homeIcon() {
-    return L.divIcon({
-      className: "", iconSize: [18, 18], iconAnchor: [9, 9],
-      html: '<div style="width:16px;height:16px;border-radius:50%;'
-          + 'background:var(--home);box-shadow:0 0 0 4px '
-          + 'color-mix(in srgb, var(--home) 25%, transparent),'
-          + '0 0 12px color-mix(in srgb, var(--home) 80%, transparent)"></div>',
-    });
+    showBasemapInfo();
   }
 
   function drawHome() {
-    state.rings.forEach((r) => r.remove());
-    state.rings = [];
-    if (state.homeMarker) state.homeMarker.remove();
-    const { lat, lon } = state.home;
-    state.homeMarker = L.marker([lat, lon], { icon: homeIcon() })
-      .addTo(state.map).bindTooltip(state.home.label || "Home Base");
-    const ringColor = themeColor("--home", "#6C8CFF");
-    (state.cfg.map.range_rings_m || []).forEach((r) => {
-      state.rings.push(L.circle([lat, lon], {
-        radius: r, color: ringColor, weight: 1, opacity: .35,
-        fill: false, dashArray: "4 6",
-      }).addTo(state.map));
-    });
+    DDMap.setHome(state.home.lat, state.home.lon, state.home.label,
+                  state.cfg.map.range_rings_m || []);
+  }
+
+  /** Note in the legend whether the map is running offline. */
+  async function showBasemapInfo() {
+    try {
+      const info = await (await fetch("/api/map/info")).json();
+      const el = $("basemapInfo");
+      if (!el) return;
+      el.textContent = info.offline
+        ? `Offline basemap · ${info.vector ? "vector" : "raster"}`
+        : "Online basemap";
+      el.classList.toggle("offline-ok", !!info.offline);
+    } catch (_) { /* non-critical */ }
   }
 
   /* ---------------------------- websocket ---------------------------- */
@@ -140,52 +129,29 @@
   }
 
   function createContact(d) {
-    const track = L.polyline([], {
-      color: themeColor("--accent", "#E8963C"), weight: 2, opacity: .7,
-    }).addTo(state.map);
     return {
       id: d.drone_id, model: d.model, source: d.source,
-      marker: null, opMarker: null, track, positions: [],
-      last: d, lastSeen: Date.now(), altHist: [],
+      positions: [], last: d, lastSeen: Date.now(), altHist: [],
     };
-  }
-
-  function droneIcon(threat, heading) {
-    return L.divIcon({
-      className: "drone-marker" + (threat ? " threat" : ""),
-      iconSize: [26, 26], iconAnchor: [13, 13],
-      html: DRONE_SVG.replace("<svg ", `<svg style="transform:rotate(${heading || 0}deg)" `),
-    });
-  }
-  function opIcon() {
-    return L.divIcon({ className: "op-marker", iconSize: [22, 22], iconAnchor: [11, 11], html: OP_SVG });
   }
 
   function updateContact(c, d) {
     c.last = d; c.lastSeen = Date.now(); c.model = d.model || c.model;
     if (d.drone_lat != null) {
-      const ll = [d.drone_lat, d.drone_lon];
-      c.positions.push(ll);
+      c.positions.push([d.drone_lat, d.drone_lon]);
       if (c.positions.length > 600) c.positions.shift();
-      c.track.setLatLngs(c.positions);
+      DDMap.setTrack(c.id, c.positions);
       const threat = d.range_m != null && d.range_m <= INNER_RING();
-      if (!c.marker) {
-        c.marker = L.marker(ll, { icon: droneIcon(threat, d.heading_deg) })
-          .addTo(state.map)
-          .on("click", () => focusContact(c.id));
-      } else {
-        c.marker.setLatLng(ll);
-        c.marker.setIcon(droneIcon(threat, d.heading_deg));
+      DDMap.upsertDrone(c.id, d.drone_lat, d.drone_lon, d.heading_deg, threat,
+                        `${c.model || "Drone"} • ${fmtDist(d.range_m)}`,
+                        focusContact);
+      if (d.height_agl_m != null) {
+        c.altHist.push(d.height_agl_m);
+        if (c.altHist.length > 40) c.altHist.shift();
       }
-      c.marker.bindTooltip(`${c.model || "Drone"} • ${fmtDist(d.range_m)}`,
-        { permanent: false, direction: "top" });
-      if (d.height_agl_m != null) { c.altHist.push(d.height_agl_m); if (c.altHist.length > 40) c.altHist.shift(); }
     }
     if (d.operator_lat != null) {
-      const oll = [d.operator_lat, d.operator_lon];
-      if (!c.opMarker) c.opMarker = L.marker(oll, { icon: opIcon() })
-        .addTo(state.map).bindTooltip("Operator");
-      else c.opMarker.setLatLng(oll);
+      DDMap.upsertOperator(c.id, d.operator_lat, d.operator_lon);
     }
   }
 
@@ -193,12 +159,12 @@
     if (state.mode !== "live") return;
     const now = Date.now();
     for (const [id, c] of state.contacts) {
-      if (now - c.lastSeen > CONTACT_TTL) { removeContact(c); state.contacts.delete(id); }
+      if (now - c.lastSeen > CONTACT_TTL) {
+        DDMap.removeContact(id);
+        state.contacts.delete(id);
+      }
     }
     renderContacts();
-  }
-  function removeContact(c) {
-    [c.marker, c.opMarker, c.track].forEach((x) => x && x.remove());
   }
 
   /* ---------------------------- contact panel ---------------------------- */
@@ -239,8 +205,10 @@
 
   function focusContact(id) {
     state.focused = id;
-    const c = state.contacts.get(id) || (state.review && state.review.contacts.get(id));
-    if (c && c.last && c.last.drone_lat != null) state.map.panTo([c.last.drone_lat, c.last.drone_lon]);
+    const c = state.contacts.get(id)
+      || (state.review && state.review.contacts.get(id));
+    const last = c && (c.last || (c.rows && c.rows[c.rows.length - 1]));
+    if (last && last.drone_lat != null) DDMap.panTo(last.drone_lat, last.drone_lon);
     renderContacts();
   }
 
@@ -288,8 +256,8 @@
     state.mode = "review";
     $("btnReview").classList.add("active"); $("btnLive").classList.remove("active");
     $("pbControls").hidden = false;
-    // hide live layers
-    for (const c of state.contacts.values()) removeContact(c);
+    DDMap.clearContacts();          // drop the live overlay
+    state.contacts.clear();
     loadReviewWindow();
   }
   function enterLive() {
@@ -297,7 +265,8 @@
     $("btnLive").classList.add("active"); $("btnReview").classList.remove("active");
     $("pbControls").hidden = true;
     stopPlay();
-    if (state.review) { state.review.contacts.forEach(removeContact); state.review = null; }
+    DDMap.clearContacts();
+    state.review = null;
     renderContacts();
   }
 
@@ -312,8 +281,9 @@
       if (!contacts.has(d.drone_id)) contacts.set(d.drone_id, { id: d.drone_id, model: d.model, rows: [] });
       contacts.get(d.drone_id).rows.push(d);
     }
-    if (state.review) state.review.contacts.forEach(removeContact);
-    state.review = { start, end, detections, contacts, playhead: start, playing: false, layers: new Map() };
+    DDMap.clearContacts();
+    state.review = { start, end, detections, contacts,
+                     playhead: start, playing: false };
     $("scrubber").value = 1000;
     renderReviewAt(end);
     $("pbTime").textContent = detections.length
@@ -326,25 +296,23 @@
     const active = [];
     for (const [id, c] of state.review.contacts) {
       const rows = c.rows.filter((r) => r.ts <= t);
-      let layer = state.review.layers.get(id);
-      if (!layer) {
-        layer = { track: L.polyline([], { color: themeColor("--accent", "#E8963C"), weight: 2, opacity: .7 }).addTo(state.map), marker: null, op: null };
-        state.review.layers.set(id, layer);
-      }
-      const pts = rows.filter((r) => r.drone_lat != null).map((r) => [r.drone_lat, r.drone_lon]);
-      layer.track.setLatLngs(pts);
+      const pts = rows.filter((r) => r.drone_lat != null)
+                      .map((r) => [r.drone_lat, r.drone_lon]);
+      DDMap.setTrack(id, pts);
       const last = rows[rows.length - 1];
-      const recent = last && (t - last.ts) < 15;    // consider "in the air" if seen in last 15s of timeline
+      // Treat a contact as "in the air" if seen in the last 15s of timeline.
+      const recent = last && (t - last.ts) < 15;
       if (recent && last.drone_lat != null) {
-        if (!layer.marker) layer.marker = L.marker([last.drone_lat, last.drone_lon], { icon: droneIcon(false, last.heading_deg) }).addTo(state.map);
-        else { layer.marker.setLatLng([last.drone_lat, last.drone_lon]); layer.marker.setIcon(droneIcon(false, last.heading_deg)); }
-        layer.marker.bindTooltip(`${c.model || "Drone"} • ${clockOf(last.ts)}`);
+        DDMap.upsertDrone(id, last.drone_lat, last.drone_lon, last.heading_deg,
+                          false, `${c.model || "Drone"} • ${clockOf(last.ts)}`,
+                          focusContact);
         if (last.operator_lat != null) {
-          if (!layer.op) layer.op = L.marker([last.operator_lat, last.operator_lon], { icon: opIcon() }).addTo(state.map);
-          else layer.op.setLatLng([last.operator_lat, last.operator_lon]);
+          DDMap.upsertOperator(id, last.operator_lat, last.operator_lon);
         }
         active.push({ id, model: c.model, last: annotate(last) });
-      } else if (layer.marker) { layer.marker.remove(); layer.marker = null; if (layer.op) { layer.op.remove(); layer.op = null; } }
+      } else {
+        DDMap.hideMarkers(id);      // keep the track, drop the aircraft
+      }
     }
     // reuse contact panel for the review frame
     const list = $("contactList"); list.innerHTML = "";
@@ -447,7 +415,7 @@
     state.home = { ...state.home, ...res.home };
     state.cfg.site.home = state.home;
     drawHome();
-    state.map.panTo([lat, lon]);
+    DDMap.panTo(lat, lon);
     closeSettings();
   }
 

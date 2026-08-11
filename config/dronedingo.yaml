@@ -22,13 +22,24 @@ site:
     set: false               # becomes true once configured from the UI
 
 map:
-  # Online default. For offline farms, point this at a locally served tile
-  # cache (see docs/OFFLINE_MAPS.md) and the UI needs no code changes.
+  # Fallback used when no offline basemap is configured (requires internet).
   tile_url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
   max_zoom: 19
   default_zoom: 15
   # Alert range rings drawn around Home Base, in metres.
   range_rings_m: [250, 500, 1000]
+
+  # ---- Offline basemap (recommended — most farms have poor connectivity) ---
+  # Drop a .pmtiles or .mbtiles file on the appliance and point `path` at it.
+  # The appliance then serves its own tiles and needs no internet at all.
+  # Vector tiles are styled live from the brand palette above, so the map
+  # matches the product. See docs/OFFLINE_MAPS.md for getting a region file.
+  basemap:
+    path: null                # e.g. "data/basemap/northamptonshire.pmtiles"
+    schema: "protomaps"       # "protomaps" (default) or "openmaptiles"
+    # Vector labels need glyph files. Leave null for a clean label-free map;
+    # set to a served glyphs URL to switch place names on.
+    glyphs_url: null          # e.g. "/vendor/glyphs/{fontstack}/{range}.pbf"
 
 sources:
   # ---- Identity + position (2.4/5.8 GHz Remote ID & DJI DroneID) ----------
