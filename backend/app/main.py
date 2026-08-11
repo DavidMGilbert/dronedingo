@@ -98,6 +98,24 @@ async def api_bounds():
     return b
 
 
+@app.get("/api/alerts")
+async def api_alerts_status():
+    a = manager.alerter
+    return {
+        "enabled": a.enabled,
+        "ntfy_topic": a.topic,
+        "ntfy_server": a.server,
+        "webhook": bool(a.webhook),
+        "alert_ring_m": a.ring_m,
+        "resight_after_s": a.resight_after_s,
+    }
+
+
+@app.post("/api/alerts/test")
+async def api_alerts_test():
+    return await asyncio.to_thread(manager.alerter.test)
+
+
 # ----------------------------- WebSocket -----------------------------------
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):

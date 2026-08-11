@@ -89,15 +89,24 @@
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     state.ws = ws;
-    ws.onopen = () => setLink(true);
-    ws.onclose = () => { setLink(false); setTimeout(connectWS, 2000); };
+    // One keepalive per socket, cleared on close — otherwise reconnects on a
+    // flaky link accumulate timers for the life of the page.
+    let keepalive = null;
+    const shutdown = () => {
+      if (keepalive) { clearInterval(keepalive); keepalive = null; }
+    };
+    ws.onopen = () => {
+      setLink(true);
+      keepalive = setInterval(() => {
+        if (ws.readyState === 1) ws.send("ping");
+      }, 20000);
+    };
+    ws.onclose = () => { shutdown(); setLink(false); setTimeout(connectWS, 2000); };
     ws.onerror = () => ws.close();
     ws.onmessage = (ev) => {
       const msg = JSON.parse(ev.data);
       if (msg.kind === "detection" && state.mode === "live") onDetection(msg);
     };
-    // keepalive
-    setInterval(() => { if (ws.readyState === 1) ws.send("ping"); }, 20000);
   }
 
   function setLink(up) {
@@ -371,10 +380,40 @@
 
   /* ---------------------------- settings / home ---------------------------- */
   function openSettings() {
-    $("homeLat").value = state.home.lat.toFixed(5);
-    $("homeLon").value = state.home.lon.toFixed(5);
+    $("homeLat").value = Number(state.home.lat).toFixed(5);
+    $("homeLon").value = Number(state.home.lon).toFixed(5);
     $("homeLabel").value = state.home.label || "Home Base";
     $("settingsModal").hidden = false;
+    loadAlertStatus();
+  }
+
+  async function loadAlertStatus() {
+    const el = $("alertStatus");
+    try {
+      const a = await (await fetch("/api/alerts")).json();
+      if (a.enabled) {
+        const via = [a.ntfy_topic ? `ntfy topic “${a.ntfy_topic}”` : null,
+                     a.webhook ? "webhook" : null].filter(Boolean).join(" + ");
+        el.className = "small alert-ok";
+        el.textContent = `Active — ${via}. Alerts fire within ${a.alert_ring_m} m, `
+          + `at most once per drone every ${Math.round(a.resight_after_s / 60)} min.`;
+      } else {
+        el.className = "small alert-off";
+        el.textContent = "Not configured. Set alerts.ntfy_topic in "
+          + "config/skywarden.yaml and restart to get phone notifications.";
+      }
+    } catch (_) { el.textContent = "Status unavailable."; }
+  }
+
+  async function sendTestAlert() {
+    const el = $("alertStatus");
+    el.textContent = "Sending…";
+    try {
+      const r = await (await fetch("/api/alerts/test", { method: "POST" })).json();
+      el.className = "small " + (r.ok ? "alert-ok" : "alert-off");
+      el.textContent = r.ok ? "Test alert sent — check your phone."
+                            : `Failed: ${r.error}`;
+    } catch (e) { el.className = "small alert-off"; el.textContent = "Failed to send."; }
   }
   function closeSettings() { $("settingsModal").hidden = true; state.pickingHome = false; }
   function setHomeFromLatLng(lat, lon) {
@@ -403,6 +442,7 @@
     $("btnSettings").onclick = openSettings;
     $("btnCloseSettings").onclick = closeSettings;
     $("btnSaveHome").onclick = saveHome;
+    $("btnTestAlert").onclick = sendTestAlert;
     $("btnUseMap").onclick = () => { state.pickingHome = true; $("settingsModal").hidden = true;
       $("homeHint").textContent = "Click the map to drop the marker…"; };
     $("btnLive").onclick = enterLive;

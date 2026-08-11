@@ -12,6 +12,7 @@ import time
 from .models import Detection
 from .db import DB
 from .hub import Hub
+from .alerts import Alerter
 from .geo import haversine_m, bearing_deg, compass
 from . import config as cfg
 
@@ -44,6 +45,7 @@ class Manager:
         self.queue: asyncio.Queue[Detection] = asyncio.Queue()
         self.sources = []
         self._consumer: asyncio.Task | None = None
+        self.alerter = Alerter(cfg.load())
 
     def _emit(self, det: Detection) -> None:
         """Thread-safe hand-off from a source thread to the event loop."""
@@ -87,6 +89,7 @@ class Manager:
                     msg["bearing_deg"] = round(brg)
                     msg["compass"] = compass(brg)
                 await self.hub.broadcast(msg)
+                self.alerter.consider(msg)   # non-blocking; dispatches off-thread
             except Exception:
                 log.exception("failed to process detection")
 

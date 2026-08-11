@@ -23,7 +23,8 @@ It is **passive only**: it listens, it never transmits or interferes. See
 
 | Layer | Catches | Yields | Hardware |
 |-------|---------|--------|----------|
-| **Remote ID / DroneID — WiFi** (2.4/5.8 GHz) | Compliant + DJI consumer drones | Serial, model, **drone + operator GPS**, altitude, speed, heading | WiFi adapter (monitor mode) |
+| **Remote ID — WiFi** (2.4/5.8 GHz) | Compliant drones (ASTM F3411) | Serial, model, **drone + operator GPS**, altitude, speed, heading | WiFi adapter (monitor mode) |
+| **DJI DroneID** (proprietary) | DJI aircraft, incl. those not sending Remote ID | Serial, aircraft model, **drone + operator + home GPS**, full telemetry | same adapter |
 | **Remote ID — Bluetooth** (BT4/BT5) | Compliant drones on the BT transport | Same telemetry, second transport | Bluetooth adapter |
 | **RF presence** (sub-1.7 GHz) | Non-compliant / analog FPV | "Something is transmitting" on 433/900 MHz, 1.2 GHz | RTL-SDR |
 | **Simulator** | — (demo/dev) | Synthetic traffic to run the whole UI with no radios | none |
@@ -42,7 +43,9 @@ permissive (MIT/BSD) packages are bundled. See [NOTICES.md](NOTICES.md).
 - **Live map** with dark basemap, Home Base + alert range rings.
 - **Active contacts** panel — range/bearing from base, height, speed, heading,
   RSSI, and **operator location** when broadcast.
-- **Proximity alerts** when a contact crosses the inner ring.
+- **Proximity alerts** when a contact crosses the inner ring — on screen and
+  pushed to the farmer's phone, with a tap-through to the operator's location
+  ([setup](docs/ALERTS.md)).
 - **Sighting log** — per-drone sessions (first/last seen, max altitude, hit
   count, whether an operator was logged).
 - **Review mode** — scrub and replay any time window; watch tracks build with
@@ -84,6 +87,16 @@ sudo bash /opt/skywarden/deploy/monitor-mode.sh wlan1
 # RTL-SDR presence: auto-enabled by the installer if a dongle is detected
 ```
 
+## Self-test
+
+```bash
+/opt/skywarden/.venv/bin/python -m unittest discover -s /opt/skywarden/backend/tests -v
+```
+
+30 tests covering the Remote ID and DJI decoders, frame parsing, alert logic and
+geo maths. See [docs/VALIDATION.md](docs/VALIDATION.md) for confirming the
+decoders against real aircraft.
+
 ## Configuration
 
 Everything lives in [`config/skywarden.yaml`](config/skywarden.yaml):
@@ -110,7 +123,8 @@ Everything lives in [`config/skywarden.yaml`](config/skywarden.yaml):
 - [x] First-party capture stack (no GPL deps)
 - [x] Bluetooth Remote ID source
 - [x] Single-command unattended installer
-- [ ] DJI proprietary DroneID full decode
+- [x] DJI proprietary DroneID decode (v1/v2, incl. operator position)
+- [x] Phone push alerts (ntfy) + webhook
 - [ ] Multi-node fusion (triangulate non-GPS RF hits across sensors)
 - [ ] Acoustic night-time detector
 - [ ] Offline vector basemap bundle

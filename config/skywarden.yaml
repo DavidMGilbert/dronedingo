@@ -49,10 +49,27 @@ sources:
       - { name: "1.2 GHz analog video", start: 1240000000, stop: 1300000000 }
 
 alerts:
-  # Fired when a contact enters the innermost range ring.
-  quiet_hours: null           # e.g. "22:00-06:00" to suppress low-priority pings
-  ntfy_topic: null            # set to a ntfy.sh topic for free phone push
-  webhook_url: null           # optional POST target for external integrations
+  # --- Phone push via ntfy (free, no account) ---------------------------------
+  # 1. Install "ntfy" on the phone (iOS/Android).
+  # 2. Subscribe to a long, unguessable topic name — anyone who knows the topic
+  #    can read your alerts, so treat it like a password.
+  # 3. Put the same topic here and restart. Test it from the UI (⚙ → Send test).
+  ntfy_topic: null            # e.g. "skywarden-oakfield-7fq2p8xk"
+  ntfy_server: "https://ntfy.sh"   # or your own self-hosted ntfy
+
+  webhook_url: null           # optional JSON POST target for other integrations
+
+  # Alert when a contact comes within this many metres of Home Base.
+  # Defaults to the innermost range ring if left null.
+  alert_ring_m: null
+  # Don't re-alert for the same drone until it has been gone this long (seconds).
+  # Prevents one overflight generating hundreds of notifications.
+  resight_after_s: 300
+
+  quiet_hours: null           # e.g. "22:00-06:00"
+  # Overnight is exactly when theft happens, so quiet hours do NOT suppress
+  # alerts unless you explicitly opt in here.
+  quiet_hours_suppress: false
 
 server:
   host: "0.0.0.0"
