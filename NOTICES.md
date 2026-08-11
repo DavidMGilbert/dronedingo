@@ -15,7 +15,10 @@ keeping the product presentation unbranded with respect to them.
 | Uvicorn | ASGI server | BSD-3-Clause |
 | PyYAML | Config parsing | MIT |
 | aiosqlite | Async SQLite | MIT |
-| Leaflet (vendored, `frontend/vendor/leaflet`) | Map rendering | BSD-2-Clause |
+| itsdangerous | Signed session cookies | BSD-3-Clause |
+| cryptography | Ed25519 release-signature verification | Apache-2.0 / BSD |
+| MapLibre GL JS (vendored, `frontend/vendor/maplibre`) | Map rendering | BSD-3-Clause |
+| Barlow / Barlow Condensed (vendored, `frontend/vendor/fonts`) | Typography | SIL Open Font License 1.1 |
 | OpenStreetMap tiles (optional/online) | Basemap imagery | ODbL (© OpenStreetMap contributors) |
 
 ## System libraries (not redistributed by us)

@@ -25,7 +25,7 @@ clicks. Nothing about this needs GitHub.
 ## 1. Check endpoint
 
 ```
-GET https://dronedingo.com.au/api/v1/updates/latest
+GET https://update.dronedingo.com.au/api/v1/updates/latest
         ?channel=stable          # or "beta"
         &current=0.2.0           # appliance's running version
         &node=dingo-01           # node id (for your telemetry/metering)
@@ -46,10 +46,10 @@ appliance decides whether it is newer:
   "notes": "Acoustic night detector; OcuSync 4 fingerprints; bug fixes.",
   "min_upgradable_from": "0.1.0",
   "artifact": {
-    "url": "https://dl.dronedingo.com.au/releases/dronedingo-0.3.0.zip",
+    "url": "https://update.dronedingo.com.au/releases/dronedingo-0.3.0.zip",
     "size": 5242880,
     "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    "signature": "base64(ed25519 signature of the 32 raw sha256 bytes)",
+    "signature": "base64(ed25519 signature over the 32 raw sha256 bytes)",
     "signature_alg": "ed25519"
   }
 }
@@ -145,7 +145,7 @@ independently of the token.
 ```yaml
 updates:
   channel: "stable"
-  check_url: "https://dronedingo.com.au/api/v1/updates/latest"
+  check_url: "https://update.dronedingo.com.au/api/v1/updates/latest"
   token: null            # per-appliance bearer token (from provisioning)
   public_key: null       # base64 Ed25519 public key that signs releases
   auto_check: true       # poll on a schedule; NEVER auto-install
@@ -166,16 +166,22 @@ rollback on failure — is handled on the appliance.
 
 ## 8. Reference: signing a release (build machine)
 
-```bash
-# one-time keypair (keep dronedingo-release.key SECRET, off the appliances)
-openssl genpkey -algorithm ed25519 -out dronedingo-release.key
-openssl pkey -in dronedingo-release.key -pubout -out dronedingo-release.pub
+The appliance's `updates.public_key` is the **raw 32-byte** Ed25519 public key,
+base64-encoded (it is loaded with `Ed25519PublicKey.from_public_bytes`). The
+signature is the **raw 64-byte** signature over the raw SHA-256 digest, base64.
 
-# per release
+```bash
+# One-time keypair. Keep the .key SECRET and OFF the appliances.
+openssl genpkey -algorithm ed25519 -out dronedingo-release.key
+
+# Raw 32-byte public key -> put this base64 in every appliance's updates.public_key
+openssl pkey -in dronedingo-release.key -pubout -outform DER | tail -c 32 | base64 -w0
+
+# Per release: sign the raw sha256 digest, emit base64 -> manifest.artifact.signature
 sha256sum dronedingo-0.3.0.zip | cut -d' ' -f1 | xxd -r -p > digest.bin
-openssl pkeyutl -sign -inkey dronedingo-release.key -rawin -in digest.bin \
-  | base64 -w0                       # -> manifest.artifact.signature
+openssl pkeyutl -sign -inkey dronedingo-release.key -rawin -in digest.bin | base64 -w0
 ```
 
-The base64 public key from `dronedingo-release.pub` goes into every appliance's
-`updates.public_key`.
+> Signing over the raw SHA-256 digest keeps the signed message tiny and lets the
+> appliance verify hash and signature against the same 32 bytes. The `sha256`
+> and `signature` in the manifest are therefore consistent by construction.

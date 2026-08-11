@@ -89,10 +89,14 @@ alerts:
   quiet_hours_suppress: false
 
 updates:
-  # git checkout (default appliance) checks the tracked branch; set a
-  # manifest_url instead to check a hosted release document for a SaaS fleet.
-  branch: "main"
-  manifest_url: null         # e.g. "https://updates.dronedingo.io/latest.json"
+  # Production appliances update from the website (see docs/UPDATE_PROTOCOL.md).
+  # Set check_url to switch from the git-checkout dev flow to signed releases.
+  channel: "stable"                  # or "beta"
+  check_url: null                    # https://update.dronedingo.com.au/api/v1/updates/latest
+  token: null                        # per-appliance bearer token (provisioning)
+  public_key: null                   # base64 raw Ed25519 key that signs releases
+  auto_check: true                   # check on a schedule; never auto-install
+  branch: "main"                     # git fallback when check_url is null (dev)
 
 auth:
   # The web UI is gated behind a login. On first visit you set the admin

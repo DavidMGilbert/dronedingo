@@ -30,7 +30,7 @@ step "Installing system components…"
 run apt-get update -qq
 # Core runtime + RTL-SDR library/tools + wifi tooling. Quiet, unattended.
 run apt-get install -y -qq --no-install-recommends \
-    python3 python3-venv python3-pip git rsync \
+    python3 python3-venv python3-pip git rsync unzip \
     librtlsdr0 rtl-sdr usbutils iw
 
 # Ensure the DVB kernel driver doesn't grab the RTL-SDR (standard SDR setup).
