@@ -1,6 +1,6 @@
 # Legal & compliance posture
 
-SkyWarden is a **passive detection and logging** system. It listens; it never
+DroneDingo is a **passive detection and logging** system. It listens; it never
 transmits, jams, spoofs, or takes control of any aircraft.
 
 ## What it does

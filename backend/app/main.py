@@ -1,4 +1,4 @@
-"""SkyWarden — FastAPI application entrypoint.
+"""DroneDingo — FastAPI application entrypoint.
 
 Serves the branded web UI, a REST API for config/history/playback, and a
 WebSocket stream of live detections.
@@ -21,7 +21,7 @@ from .manager import Manager
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
-log = logging.getLogger("skywarden")
+log = logging.getLogger("dronedingo")
 
 BASE = Path(__file__).resolve().parents[2]
 FRONTEND = BASE / "frontend"
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     await db.init()
     await manager.start()
     prune_task = asyncio.create_task(_prune_loop())
-    log.info("SkyWarden online — UI at http://%s:%s",
+    log.info("DroneDingo online — UI at http://%s:%s",
              cfg.load()["server"]["host"], cfg.load()["server"]["port"])
     yield
     prune_task.cancel()
@@ -52,7 +52,7 @@ async def _prune_loop():
         await asyncio.sleep(3600)
 
 
-app = FastAPI(title="SkyWarden", lifespan=lifespan)
+app = FastAPI(title="DroneDingo", lifespan=lifespan)
 
 
 # ----------------------------- REST API ------------------------------------

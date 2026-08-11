@@ -1,15 +1,15 @@
 [Unit]
-Description=SkyWarden airspace monitoring appliance
+Description=DroneDingo airspace monitoring appliance
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=skywarden
-WorkingDirectory=/opt/skywarden
+User=dronedingo
+WorkingDirectory=/opt/dronedingo
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/skywarden/.venv/bin/uvicorn app.main:app \
-  --host 0.0.0.0 --port 8000 --app-dir /opt/skywarden/backend
+ExecStart=/opt/dronedingo/.venv/bin/uvicorn app.main:app \
+  --host 0.0.0.0 --port 8000 --app-dir /opt/dronedingo/backend
 Restart=always
 RestartSec=3
 # Allow raw sockets for capture sources (scapy) without full root:

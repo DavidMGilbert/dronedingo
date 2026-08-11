@@ -1,6 +1,6 @@
 # Third-party notices
 
-SkyWarden is a proprietary product. Its **capture stack is entirely first-party**
+DroneDingo is a proprietary product. Its **capture stack is entirely first-party**
 — the WiFi 802.11/radiotap parser, the RTL-SDR interface, and the Bluetooth HCI
 scanner are our own code using only the Python standard library. There are **no
 GPL/copyleft dependencies** bundled with the product.
@@ -24,7 +24,7 @@ keeping the product presentation unbranded with respect to them.
   own package repository by the installer (`apt`). We load it dynamically via a
   `ctypes` binding, the same way any application links a system library. We do
   **not** copy, modify, or redistribute it, so its copyleft terms are not
-  triggered by SkyWarden's distribution. If you build a bundled OS *image* that
+  triggered by DroneDingo's distribution. If you build a bundled OS *image* that
   includes it, ship librtlsdr's license text with that image.
 
 ## Basemap attribution

@@ -5,7 +5,7 @@ __pycache__/
 venv/
 *.egg-info/
 
-# SkyWarden runtime data (never commit captures / evidence DB)
+# DroneDingo runtime data (never commit captures / evidence DB)
 data/
 *.db
 *.sqlite

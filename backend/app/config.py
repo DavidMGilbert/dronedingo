@@ -1,6 +1,6 @@
 """Configuration loading.
 
-Static deployment config lives in ``config/skywarden.yaml``.
+Static deployment config lives in ``config/dronedingo.yaml``.
 Runtime-mutable state the UI can change (e.g. Home Base location) is written
 to ``data/state.json`` and layered on top, so we never rewrite the YAML and
 lose its comments.
@@ -14,7 +14,7 @@ from typing import Any
 import yaml
 
 BASE = Path(__file__).resolve().parents[2]          # project root
-CONFIG_PATH = BASE / "config" / "skywarden.yaml"
+CONFIG_PATH = BASE / "config" / "dronedingo.yaml"
 DATA_DIR = BASE / "data"
 STATE_PATH = DATA_DIR / "state.json"
 

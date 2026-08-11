@@ -16,7 +16,7 @@ from .alerts import Alerter
 from .geo import haversine_m, bearing_deg, compass
 from . import config as cfg
 
-log = logging.getLogger("skywarden")
+log = logging.getLogger("dronedingo")
 
 _SOURCE_REGISTRY = {}
 
@@ -64,7 +64,7 @@ class Manager:
                 self.sources.append(src)
                 log.info("source started: %s", name)
         if not self.sources:
-            log.warning("no sources enabled — check config/skywarden.yaml")
+            log.warning("no sources enabled — check config/dronedingo.yaml")
         self._consumer = asyncio.create_task(self._consume())
 
     async def _consume(self) -> None:

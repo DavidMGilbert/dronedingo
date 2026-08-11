@@ -1,18 +1,21 @@
 /* ====================================================================
-   SkyWarden UI
+   DroneDingo UI
    ==================================================================== */
 :root {
-  --accent: #38e8b0;
-  --accent-alt: #ffb454;
-  --bg: #0b0f14;
-  --bg-2: #111823;
-  --panel: #141c28;
-  --panel-2: #1a2431;
-  --line: #24303f;
-  --text: #e7eef6;
-  --muted: #8598ac;
-  --danger: #ff5d6c;
-  --shadow: 0 8px 30px rgba(0, 0, 0, .45);
+  /* Brand colours are overwritten at runtime from config (see applyBrand). */
+  --accent: #E8963C;        /* ochre — brand + drone contacts */
+  --accent-alt: #46D6C4;    /* teal  — operator positions      */
+  --home: #6C8CFF;          /* indigo — Home Base + rings      */
+  --danger: #FF5A5F;
+  /* Warm charcoal ground, so the ochre reads as firelight rather than alarm. */
+  --bg: #121009;
+  --bg-2: #1A1610;
+  --panel: #1C1813;
+  --panel-2: #241F18;
+  --line: #352C22;
+  --text: #F3EDE4;
+  --muted: #A2937F;
+  --shadow: 0 8px 30px rgba(0, 0, 0, .55);
   --radius: 12px;
 }
 
@@ -42,13 +45,13 @@ h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin: 
   z-index: 500;
 }
 .brand { display: flex; align-items: center; gap: 12px; }
-.brand-mark { width: 36px; height: 36px; flex: none; }
-.mk-shield {
-  fill: url(#swShield);
-  stroke: var(--accent); stroke-width: 1.6; stroke-linejoin: round;
+.brand-mark { width: 38px; height: 38px; flex: none; }
+.mk-head { fill: url(#ddMark); }
+.mk-eye { fill: var(--bg); }
+.mk-arcs {
+  fill: none; stroke: var(--accent-alt); stroke-width: 1.9;
+  stroke-linecap: round; opacity: .95;
 }
-.mk-arc { fill: none; stroke: var(--bg); stroke-width: 2.2; stroke-linecap: round; opacity: .9; }
-.mk-dot { fill: var(--bg); }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-name { font-weight: 700; font-size: 18px; letter-spacing: .02em; }
 .brand-tag { font-size: 11px; color: var(--muted); }
@@ -140,22 +143,28 @@ h2 { font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin: 
 .map-legend .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
 .swatch.drone { background: var(--accent); }
 .swatch.operator { background: var(--accent-alt); }
-.swatch.home { background: #4aa8ff; }
+.swatch.home { background: var(--home); }
 
 /* Map markers (divIcon) */
 .drone-marker { display: grid; place-items: center; }
 .drone-marker .glyph {
   width: 26px; height: 26px; color: var(--accent);
-  filter: drop-shadow(0 0 6px rgba(56,232,176,.8));
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 80%, transparent));
   transition: transform .3s linear;
 }
-.drone-marker.threat .glyph { color: var(--danger); filter: drop-shadow(0 0 6px rgba(255,93,108,.8)); }
+.drone-marker.threat .glyph {
+  color: var(--danger);
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--danger) 80%, transparent));
+}
 .marker-label {
   position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
   white-space: nowrap; font-size: 10px; font-weight: 600;
   background: rgba(11,15,20,.8); padding: 1px 5px; border-radius: 4px; border: 1px solid var(--line);
 }
-.op-marker { color: var(--accent-alt); filter: drop-shadow(0 0 5px rgba(255,180,84,.7)); }
+.op-marker {
+  color: var(--accent-alt);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent-alt) 75%, transparent));
+}
 
 /* ---------------------------- Playback ---------------------------- */
 .playback {

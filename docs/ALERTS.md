@@ -1,6 +1,6 @@
 # Phone alerts (ntfy)
 
-SkyWarden pushes a notification to the farmer's phone the moment a drone comes
+DroneDingo pushes a notification to the farmer's phone the moment a drone comes
 within the alert ring. It uses **ntfy** — free, no account, no app-store
 subscription, and it works over any internet connection the Pi has.
 
@@ -10,17 +10,17 @@ subscription, and it works over any internet connection the Pi has.
 2. **Choose a topic name.** Anyone who knows the topic can read your alerts, so
    treat it like a password — make it long and random:
    ```
-   skywarden-oakfield-7fq2p8xk
+   dronedingo-oakfield-7fq2p8xk
    ```
 3. **Subscribe** to that topic in the app (+ → Subscribe to topic).
-4. **Tell the appliance**, in `config/skywarden.yaml`:
+4. **Tell the appliance**, in `config/dronedingo.yaml`:
    ```yaml
    alerts:
-     ntfy_topic: "skywarden-oakfield-7fq2p8xk"
+     ntfy_topic: "dronedingo-oakfield-7fq2p8xk"
    ```
 5. Restart and test:
    ```bash
-   sudo systemctl restart skywarden
+   sudo systemctl restart dronedingo
    ```
    Then open the dashboard → **⚙ → Send test alert**. The phone should buzz.
 
@@ -55,7 +55,7 @@ have on a phone at 2am.
 **On debouncing:** a drone broadcasts several times a second. Without
 `resight_after_s` one overflight would produce hundreds of notifications and
 the farmer would mute the app within a week — which means no alerting at all
-when it matters. SkyWarden therefore sends **one alert per sighting**.
+when it matters. DroneDingo therefore sends **one alert per sighting**.
 
 **On quiet hours:** overnight is exactly when theft happens, so quiet hours are
 deliberately *not* suppressing by default. You must opt in.

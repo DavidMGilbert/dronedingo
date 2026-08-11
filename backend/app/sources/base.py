@@ -33,7 +33,7 @@ class Source:
             self.run()
         except Exception as exc:  # never let one source kill the process
             import logging
-            logging.getLogger("skywarden").exception(
+            logging.getLogger("dronedingo").exception(
                 "source %s crashed: %s", self.name, exc)
 
     def run(self) -> None:  # pragma: no cover - overridden

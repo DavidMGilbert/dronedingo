@@ -1,5 +1,5 @@
 /* ====================================================================
-   SkyWarden — front-end controller
+   DroneDingo — front-end controller
    ==================================================================== */
 (() => {
   "use strict";
@@ -41,12 +41,23 @@
 
   function applyBrand(brand) {
     if (!brand) return;
-    document.documentElement.style.setProperty("--accent", brand.accent);
-    document.documentElement.style.setProperty("--accent-alt", brand.accent_alt);
+    const root = document.documentElement;
+    for (const [key, varName] of [["accent", "--accent"],
+                                  ["accent_alt", "--accent-alt"],
+                                  ["home", "--home"],
+                                  ["danger", "--danger"]]) {
+      if (brand[key]) root.style.setProperty(varName, brand[key]);
+    }
     $("brandName").textContent = brand.product_name;
     $("brandTag").textContent = brand.tagline;
     $("nodeId").textContent = state.cfg.node_id;
     document.title = brand.product_name;
+  }
+
+  /** Read a themed colour so canvas/SVG layers match the CSS palette. */
+  function themeColor(name, fallback) {
+    return getComputedStyle(document.documentElement)
+      .getPropertyValue(name).trim() || fallback;
   }
 
   /* ---------------------------- map ---------------------------- */
@@ -64,8 +75,10 @@
   function homeIcon() {
     return L.divIcon({
       className: "", iconSize: [18, 18], iconAnchor: [9, 9],
-      html: '<div style="width:16px;height:16px;border-radius:50%;background:#4aa8ff;'
-          + 'box-shadow:0 0 0 4px rgba(74,168,255,.25),0 0 12px rgba(74,168,255,.8)"></div>',
+      html: '<div style="width:16px;height:16px;border-radius:50%;'
+          + 'background:var(--home);box-shadow:0 0 0 4px '
+          + 'color-mix(in srgb, var(--home) 25%, transparent),'
+          + '0 0 12px color-mix(in srgb, var(--home) 80%, transparent)"></div>',
     });
   }
 
@@ -76,9 +89,10 @@
     const { lat, lon } = state.home;
     state.homeMarker = L.marker([lat, lon], { icon: homeIcon() })
       .addTo(state.map).bindTooltip(state.home.label || "Home Base");
+    const ringColor = themeColor("--home", "#6C8CFF");
     (state.cfg.map.range_rings_m || []).forEach((r) => {
       state.rings.push(L.circle([lat, lon], {
-        radius: r, color: "#4aa8ff", weight: 1, opacity: .35,
+        radius: r, color: ringColor, weight: 1, opacity: .35,
         fill: false, dashArray: "4 6",
       }).addTo(state.map));
     });
@@ -126,9 +140,9 @@
   }
 
   function createContact(d) {
-    const track = L.polyline([], { color: getComputedStyle(document.documentElement)
-      .getPropertyValue("--accent").trim() || "#38e8b0", weight: 2, opacity: .7 })
-      .addTo(state.map);
+    const track = L.polyline([], {
+      color: themeColor("--accent", "#E8963C"), weight: 2, opacity: .7,
+    }).addTo(state.map);
     return {
       id: d.drone_id, model: d.model, source: d.source,
       marker: null, opMarker: null, track, positions: [],
@@ -314,7 +328,7 @@
       const rows = c.rows.filter((r) => r.ts <= t);
       let layer = state.review.layers.get(id);
       if (!layer) {
-        layer = { track: L.polyline([], { color: "#38e8b0", weight: 2, opacity: .7 }).addTo(state.map), marker: null, op: null };
+        layer = { track: L.polyline([], { color: themeColor("--accent", "#E8963C"), weight: 2, opacity: .7 }).addTo(state.map), marker: null, op: null };
         state.review.layers.set(id, layer);
       }
       const pts = rows.filter((r) => r.drone_lat != null).map((r) => [r.drone_lat, r.drone_lon]);
@@ -400,7 +414,7 @@
       } else {
         el.className = "small alert-off";
         el.textContent = "Not configured. Set alerts.ntfy_topic in "
-          + "config/skywarden.yaml and restart to get phone notifications.";
+          + "config/dronedingo.yaml and restart to get phone notifications.";
       }
     } catch (_) { el.textContent = "Status unavailable."; }
   }

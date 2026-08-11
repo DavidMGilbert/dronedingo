@@ -18,7 +18,7 @@ from ..capture.wifi_monitor import MonitorSocket
 from ..capture import dot11, odid, dji
 from .. import config as cfg
 
-log = logging.getLogger("skywarden")
+log = logging.getLogger("dronedingo")
 
 
 class WifiRemoteID(Source):

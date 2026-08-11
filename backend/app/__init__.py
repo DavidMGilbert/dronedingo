@@ -1,2 +1,2 @@
-"""SkyWarden appliance backend."""
+"""DroneDingo appliance backend."""
 __version__ = "0.1.0"

@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ SkyWarden
+# 🛡️ DroneDingo
 
 **Know what's in your sky.**
 
@@ -11,7 +11,7 @@ for property and perimeter security.
 
 ---
 
-SkyWarden is a Raspberry Pi appliance that **detects drones, identifies them,
+DroneDingo is a Raspberry Pi appliance that **detects drones, identifies them,
 and logs where they (and their operators) are** — giving farmers and property
 owners advance warning of surveillance overflights and an evidence-grade record
 to hand to law enforcement.
@@ -70,18 +70,18 @@ background) and leaves the appliance running. Auto-detects and enables an
 attached RTL-SDR.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/skywarden/main/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/dronedingo/main/deploy/install.sh | sudo bash
 ```
 
 Or from a clone: `sudo bash deploy/install.sh`. When it finishes, open the
 dashboard URL it prints.
 
-Enable the Remote ID radios you have, then `sudo systemctl restart skywarden`:
+Enable the Remote ID radios you have, then `sudo systemctl restart dronedingo`:
 
 ```bash
 # WiFi Remote ID (identity + GPS)
-sudo bash /opt/skywarden/deploy/monitor-mode.sh wlan1
-# then set sources.wifi_remoteid.enabled: true in config/skywarden.yaml
+sudo bash /opt/dronedingo/deploy/monitor-mode.sh wlan1
+# then set sources.wifi_remoteid.enabled: true in config/dronedingo.yaml
 
 # Bluetooth Remote ID: set sources.bt_remoteid.enabled: true
 # RTL-SDR presence: auto-enabled by the installer if a dongle is detected
@@ -90,7 +90,7 @@ sudo bash /opt/skywarden/deploy/monitor-mode.sh wlan1
 ## Self-test
 
 ```bash
-/opt/skywarden/.venv/bin/python -m unittest discover -s /opt/skywarden/backend/tests -v
+/opt/dronedingo/.venv/bin/python -m unittest discover -s /opt/dronedingo/backend/tests -v
 ```
 
 30 tests covering the Remote ID and DJI decoders, frame parsing, alert logic and
@@ -99,7 +99,7 @@ decoders against real aircraft.
 
 ## Configuration
 
-Everything lives in [`config/skywarden.yaml`](config/skywarden.yaml):
+Everything lives in [`config/dronedingo.yaml`](config/dronedingo.yaml):
 
 - **Re-badge the whole product** by changing `brand.product_name` / `accent`.
 - Set default map centre, range rings, RTL-SDR bands & trigger threshold.

@@ -1,4 +1,4 @@
-# SkyWarden runtime dependencies — all permissive (MIT / BSD), safe to bundle.
+# DroneDingo runtime dependencies — all permissive (MIT / BSD), safe to bundle.
 # The capture stack (WiFi 802.11, RTL-SDR, Bluetooth HCI) is our own code using
 # only the Python standard library, so there are NO GPL dependencies.
 fastapi>=0.111

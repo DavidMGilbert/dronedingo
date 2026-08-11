@@ -13,7 +13,7 @@ from ..capture.hci import HciScanner, iter_ad_structures
 from ..capture import odid
 from .. import config as cfg
 
-log = logging.getLogger("skywarden")
+log = logging.getLogger("dronedingo")
 
 _AD_SERVICE_DATA_16 = 0x16  # AD type: Service Data - 16-bit UUID
 

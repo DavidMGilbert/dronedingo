@@ -13,7 +13,7 @@ import aiosqlite
 from .config import DATA_DIR
 from .models import Detection
 
-DB_PATH = DATA_DIR / "skywarden.db"
+DB_PATH = DATA_DIR / "dronedingo.db"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS detections (

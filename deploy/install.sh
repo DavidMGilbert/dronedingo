@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  SkyWarden — single-command installer for Raspberry Pi OS (Trixie) Lite 64-bit
+#  DroneDingo — single-command installer for Raspberry Pi OS (Trixie) Lite 64-bit
 #
-#      curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/skywarden/main/deploy/install.sh | sudo bash
+#      curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/dronedingo/main/deploy/install.sh | sudo bash
 #  or, from a clone:
 #      sudo bash deploy/install.sh
 #
@@ -12,15 +12,15 @@
 # ============================================================================
 set -euo pipefail
 
-APP_DIR=/opt/skywarden
-SERVICE_USER=skywarden
-REPO_URL="https://github.com/DavidMGilbert/skywarden.git"
-LOG=/var/log/skywarden-install.log
+APP_DIR=/opt/dronedingo
+SERVICE_USER=dronedingo
+REPO_URL="https://github.com/DavidMGilbert/dronedingo.git"
+LOG=/var/log/dronedingo-install.log
 : > "$LOG"
 
 if [[ $EUID -ne 0 ]]; then echo "Please run with sudo."; exit 1; fi
 
-BRAND="SkyWarden"
+BRAND="DroneDingo"
 step() { printf "\033[1;36m[%s]\033[0m %s\n" "$BRAND" "$1"; }
 run()  { echo "+ $*" >>"$LOG"; "$@" >>"$LOG" 2>&1; }
 
@@ -34,8 +34,8 @@ run apt-get install -y -qq --no-install-recommends \
     librtlsdr0 rtl-sdr usbutils iw
 
 # Ensure the DVB kernel driver doesn't grab the RTL-SDR (standard SDR setup).
-if [[ ! -f /etc/modprobe.d/skywarden-rtlsdr.conf ]]; then
-  echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/skywarden-rtlsdr.conf
+if [[ ! -f /etc/modprobe.d/dronedingo-rtlsdr.conf ]]; then
+  echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/dronedingo-rtlsdr.conf
   run modprobe -r dvb_usb_rtl28xxu || true
 fi
 
@@ -80,10 +80,10 @@ fi
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"
 
 step "Installing and starting the service…"
-cp "$APP_DIR/deploy/skywarden.service" /etc/systemd/system/skywarden.service
+cp "$APP_DIR/deploy/dronedingo.service" /etc/systemd/system/dronedingo.service
 run systemctl daemon-reload
-run systemctl enable skywarden
-run systemctl restart skywarden
+run systemctl enable dronedingo
+run systemctl restart dronedingo
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 cat <<EOF
@@ -91,11 +91,11 @@ cat <<EOF
   ✅ $BRAND is installed and running.
 
      Dashboard : http://${IP:-<pi-ip>}:8000
-     Logs      : journalctl -u skywarden -f
-     Config    : $APP_DIR/config/skywarden.yaml
+     Logs      : journalctl -u dronedingo -f
+     Config    : $APP_DIR/config/dronedingo.yaml
      Install log: $LOG
 
-  Enable the radios you have (then: systemctl restart skywarden):
+  Enable the radios you have (then: systemctl restart dronedingo):
      • WiFi Remote ID (identity + GPS):
          sudo bash $APP_DIR/deploy/monitor-mode.sh ${MON_IF:-wlan1}
          then set sources.wifi_remoteid.enabled: true (interface: ${MON_IF:-wlan1})

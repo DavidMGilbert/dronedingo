@@ -1,7 +1,7 @@
 # Offline / self-hosted maps
 
-Farms often have poor connectivity. SkyWarden reads its basemap URL from
-`config/skywarden.yaml` (`map.tile_url`), so switching to offline tiles needs
+Farms often have poor connectivity. DroneDingo reads its basemap URL from
+`config/dronedingo.yaml` (`map.tile_url`), so switching to offline tiles needs
 **no code changes**.
 
 ## Option A — pre-rendered raster tiles (simplest)

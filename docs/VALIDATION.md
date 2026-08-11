@@ -9,16 +9,16 @@ when hardware arrives.
 Run the suite any time:
 
 ```bash
-/opt/skywarden/.venv/bin/python -m unittest discover -s /opt/skywarden/backend/tests -v
+/opt/dronedingo/.venv/bin/python -m unittest discover -s /opt/dronedingo/backend/tests -v
 ```
 
 ## Validating Remote ID (ASTM F3411)
 
 Easiest reference: a phone running a Remote ID viewer app (e.g. "Drone Scanner"
-or "OpenDroneID Receiver"), stood next to the SkyWarden node.
+or "OpenDroneID Receiver"), stood next to the DroneDingo node.
 
 1. Fly a compliant drone, or have the phone app broadcast a test beacon.
-2. Compare, field by field, what SkyWarden shows against the phone:
+2. Compare, field by field, what DroneDingo shows against the phone:
    - serial / UAS ID
    - drone lat/lon (should agree to ~5 decimal places)
    - **height vs altitude** — the most common place to get scaling wrong

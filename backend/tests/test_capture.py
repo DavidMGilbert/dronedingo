@@ -1,8 +1,8 @@
-"""SkyWarden self-tests — capture decoding and alert logic.
+"""DroneDingo self-tests — capture decoding and alert logic.
 
 Pure stdlib unittest so it runs on the appliance with no extra packages:
 
-    /opt/skywarden/.venv/bin/python -m unittest discover -s /opt/skywarden/backend/tests -v
+    /opt/dronedingo/.venv/bin/python -m unittest discover -s /opt/dronedingo/backend/tests -v
 
 These validate the decoders against synthetic packets built to spec. They prove
 the parsing logic is self-consistent; confirming the *spec interpretation*

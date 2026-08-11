@@ -14,7 +14,7 @@ from ..models import Detection
 from ..capture.librtlsdr import RtlSdr
 from .. import config as cfg
 
-log = logging.getLogger("skywarden")
+log = logging.getLogger("dronedingo")
 
 
 class RtlSdrScan(Source):

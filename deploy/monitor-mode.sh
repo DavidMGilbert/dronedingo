@@ -12,4 +12,4 @@ echo "Done:"
 iw dev "$IFACE" info | sed 's/^/  /'
 echo
 echo "Set sources.wifi_remoteid.enabled: true and interface: $IFACE in"
-echo "config/skywarden.yaml, then restart: sudo systemctl restart skywarden"
+echo "config/dronedingo.yaml, then restart: sudo systemctl restart dronedingo"

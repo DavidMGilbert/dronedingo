@@ -16,7 +16,7 @@ import time
 import urllib.request
 from datetime import datetime, time as dtime
 
-log = logging.getLogger("skywarden")
+log = logging.getLogger("dronedingo")
 
 _TIMEOUT = 8.0
 
@@ -150,7 +150,7 @@ class Alerter:
         if not self.enabled:
             return {"ok": False, "error": "No ntfy topic or webhook configured."}
         try:
-            self._send_ntfy("SkyWarden test alert",
+            self._send_ntfy("DroneDingo test alert",
                             "If you can read this, alerts are working.", {}) \
                 if self.topic else None
             if self.webhook:
