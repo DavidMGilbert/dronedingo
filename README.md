@@ -23,9 +23,15 @@ It is **passive only**: it listens, it never transmits or interferes. See
 
 | Layer | Catches | Yields | Hardware |
 |-------|---------|--------|----------|
-| **Remote ID / DroneID** (2.4/5.8 GHz) | Compliant + DJI consumer drones | Serial, model, **drone + operator GPS**, altitude, speed, heading | WiFi adapter (monitor mode) + Bluetooth |
+| **Remote ID / DroneID — WiFi** (2.4/5.8 GHz) | Compliant + DJI consumer drones | Serial, model, **drone + operator GPS**, altitude, speed, heading | WiFi adapter (monitor mode) |
+| **Remote ID — Bluetooth** (BT4/BT5) | Compliant drones on the BT transport | Same telemetry, second transport | Bluetooth adapter |
 | **RF presence** (sub-1.7 GHz) | Non-compliant / analog FPV | "Something is transmitting" on 433/900 MHz, 1.2 GHz | RTL-SDR |
 | **Simulator** | — (demo/dev) | Synthetic traffic to run the whole UI with no radios | none |
+
+**No GPL dependencies.** The entire capture stack — the 802.11/radiotap parser,
+the RTL-SDR interface (`ctypes` → system `librtlsdr`), and the Bluetooth HCI
+scanner — is first-party code using only the Python standard library. Only
+permissive (MIT/BSD) packages are bundled. See [NOTICES.md](NOTICES.md).
 
 > **Why the split?** GPS/identity live *inside* the Remote ID beacon, captured
 > over WiFi/BT. An RTL-SDR can't see 2.4/5.8 GHz, so it serves as a presence
@@ -56,22 +62,26 @@ Open <http://localhost:8000>. Synthetic drones appear immediately; open
 
 ## Deploy to a Raspberry Pi 5 (Raspbian Trixie Lite 64-bit)
 
+**One command** — installs and configures everything (quietly, in the
+background) and leaves the appliance running. Auto-detects and enables an
+attached RTL-SDR.
+
 ```bash
-git clone https://github.com/DavidMGilbert/skywarden.git
-cd skywarden
-sudo bash deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/skywarden/main/deploy/install.sh | sudo bash
 ```
 
-Then enable the radios you have:
+Or from a clone: `sudo bash deploy/install.sh`. When it finishes, open the
+dashboard URL it prints.
+
+Enable the Remote ID radios you have, then `sudo systemctl restart skywarden`:
 
 ```bash
 # WiFi Remote ID (identity + GPS)
-sudo bash deploy/monitor-mode.sh wlan1
-# edit config/skywarden.yaml: sources.wifi_remoteid.enabled: true
+sudo bash /opt/skywarden/deploy/monitor-mode.sh wlan1
+# then set sources.wifi_remoteid.enabled: true in config/skywarden.yaml
 
-# RTL-SDR presence backstop
-# edit config/skywarden.yaml: sources.rtlsdr_scan.enabled: true
-sudo systemctl restart skywarden
+# Bluetooth Remote ID: set sources.bt_remoteid.enabled: true
+# RTL-SDR presence: auto-enabled by the installer if a dongle is detected
 ```
 
 ## Configuration
@@ -97,7 +107,9 @@ Everything lives in [`config/skywarden.yaml`](config/skywarden.yaml):
 
 ## Roadmap
 
-- [ ] Bluetooth Remote ID source (long-range BT5)
+- [x] First-party capture stack (no GPL deps)
+- [x] Bluetooth Remote ID source
+- [x] Single-command unattended installer
 - [ ] DJI proprietary DroneID full decode
 - [ ] Multi-node fusion (triangulate non-GPS RF hits across sensors)
 - [ ] Acoustic night-time detector

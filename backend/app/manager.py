@@ -25,10 +25,12 @@ def _load_registry():
         return _SOURCE_REGISTRY
     from .sources.simulator import Simulator
     from .sources.wifi_remoteid import WifiRemoteID
+    from .sources.bt_remoteid import BtRemoteID
     from .sources.rtlsdr_scan import RtlSdrScan
     _SOURCE_REGISTRY.update({
         "simulator": Simulator,
         "wifi_remoteid": WifiRemoteID,
+        "bt_remoteid": BtRemoteID,
         "rtlsdr_scan": RtlSdrScan,
     })
     return _SOURCE_REGISTRY

@@ -1,9 +1,13 @@
 # Third-party notices
 
-SkyWarden is a proprietary product built on open-source components. The UI is
-deliberately unbranded with respect to these dependencies, but their licenses
-require that attribution be retained somewhere in the distribution — this file
-satisfies that while keeping the product presentation clean.
+SkyWarden is a proprietary product. Its **capture stack is entirely first-party**
+— the WiFi 802.11/radiotap parser, the RTL-SDR interface, and the Bluetooth HCI
+scanner are our own code using only the Python standard library. There are **no
+GPL/copyleft dependencies** bundled with the product.
+
+The remaining runtime dependencies are all permissive (MIT / BSD) and may be
+redistributed inside the appliance. This file preserves their attribution while
+keeping the product presentation unbranded with respect to them.
 
 | Component | Purpose | License |
 |-----------|---------|---------|
@@ -11,17 +15,21 @@ satisfies that while keeping the product presentation clean.
 | Uvicorn | ASGI server | BSD-3-Clause |
 | PyYAML | Config parsing | MIT |
 | aiosqlite | Async SQLite | MIT |
-| Leaflet | Map rendering | BSD-2-Clause |
-| OpenStreetMap tiles | Basemap imagery | ODbL (© OpenStreetMap contributors) |
-| scapy | WiFi frame capture (optional) | GPL-2.0 |
-| pyrtlsdr / librtlsdr | RTL-SDR interface (optional) | GPL-3.0 / GPL-2.0 |
-| bleak | Bluetooth capture (optional) | MIT |
+| Leaflet (vendored, `frontend/vendor/leaflet`) | Map rendering | BSD-2-Clause |
+| OpenStreetMap tiles (optional/online) | Basemap imagery | ODbL (© OpenStreetMap contributors) |
 
-**Basemap attribution:** if you ship the online OpenStreetMap basemap, ODbL
-requires visible "© OpenStreetMap contributors" credit. The attribution control
-is hidden in the appliance chrome; place the credit in your About/Legal screen,
-or self-host tiles you are licensed to rebrand (see `docs/OFFLINE_MAPS.md`).
+## System libraries (not redistributed by us)
 
-**GPL components (scapy, pyrtlsdr) are optional capture plugins** invoked as
-separate processes/imports at runtime and are not modified. If you distribute a
-node with them installed, include their license texts alongside this file.
+- **librtlsdr** (`librtlsdr0`, GPL-2.0) is installed from the operating system's
+  own package repository by the installer (`apt`). We load it dynamically via a
+  `ctypes` binding, the same way any application links a system library. We do
+  **not** copy, modify, or redistribute it, so its copyleft terms are not
+  triggered by SkyWarden's distribution. If you build a bundled OS *image* that
+  includes it, ship librtlsdr's license text with that image.
+
+## Basemap attribution
+
+If you ship the online OpenStreetMap basemap, ODbL requires visible
+"© OpenStreetMap contributors" credit. The on-map attribution control is hidden
+for the appliance look — place the credit on an About/Legal screen, or self-host
+tiles you are licensed to rebrand (see `docs/OFFLINE_MAPS.md`).

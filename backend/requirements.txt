@@ -1,11 +1,10 @@
-# --- Core (runs the appliance + simulator on any platform) ---
+# SkyWarden runtime dependencies — all permissive (MIT / BSD), safe to bundle.
+# The capture stack (WiFi 802.11, RTL-SDR, Bluetooth HCI) is our own code using
+# only the Python standard library, so there are NO GPL dependencies.
 fastapi>=0.111
 uvicorn[standard]>=0.30
 pyyaml>=6.0
 aiosqlite>=0.20
 
-# --- Hardware capture (install on the Pi as the radios are added) ---
-# scapy>=2.5          # WiFi Remote ID / DJI DroneID sniffing (monitor-mode adapter)
-# bleak>=0.22         # Bluetooth Remote ID
-# pyrtlsdr>=0.3       # RTL-SDR presence scanning (needs system librtlsdr)
-# numpy>=1.26         # FFT for RTL-SDR power detection
+# System package (installed via apt, not pip, and never redistributed by us):
+#   librtlsdr0   — provides the librtlsdr.so our ctypes binding loads

@@ -39,6 +39,9 @@ def load() -> dict[str, Any]:
     state = _load_state()
     if "home" in state:
         cfg["site"]["home"].update(state["home"])
+    # runtime source enable/disable overrides (set by installer autodetect or UI)
+    for name, enabled in state.get("sources_enabled", {}).items():
+        cfg["sources"].setdefault(name, {})["enabled"] = bool(enabled)
     cfg["_state"] = state
     return cfg
 
@@ -64,3 +67,14 @@ def set_home(lat: float, lon: float, label: str | None = None) -> dict[str, Any]
         with open(STATE_PATH, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
     return home
+
+
+def set_source_enabled(name: str, enabled: bool) -> None:
+    """Enable/disable a capture source at runtime (persists to state.json)."""
+    DATA_DIR.mkdir(exist_ok=True)
+    with _lock:
+        state = _load_state()
+        se = state.setdefault("sources_enabled", {})
+        se[name] = bool(enabled)
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)

@@ -1,56 +1,53 @@
 """RTL-SDR presence detection on sub-1.7 GHz bands.
 
-An RTL-SDR cannot see 2.4/5.8 GHz Remote ID, so this source does NOT produce
-identity or GPS. It is the backstop for *non-compliant / analog* drones: it
-sweeps the configured control/telemetry/video bands and raises a presence hit
-when in-band power rises clearly above the rolling noise floor.
+Uses our own ctypes binding to librtlsdr (no pyrtlsdr). An RTL-SDR cannot see
+2.4/5.8 GHz Remote ID, so this source produces no identity or GPS — it is the
+backstop for non-compliant / analog drones: it sweeps the configured
+control/telemetry/video bands and raises a presence hit when in-band power
+rises clearly above the rolling noise floor.
 """
 from __future__ import annotations
-import time
+import logging
 
 from .base import Source
 from ..models import Detection
+from ..capture.librtlsdr import RtlSdr
 from .. import config as cfg
+
+log = logging.getLogger("skywarden")
 
 
 class RtlSdrScan(Source):
     name = "rtlsdr_scan"
 
     def run(self) -> None:
-        try:
-            import numpy as np
-            from rtlsdr import RtlSdr
-        except Exception as exc:
-            import logging
-            logging.getLogger("skywarden").error(
-                "rtlsdr_scan disabled: pyrtlsdr/numpy not available (%s)", exc)
-            return
-
         conf = self.config["sources"]["rtlsdr_scan"]
         node_id = cfg.get_node_id()
         bands = conf["bands"]
         dwell = float(conf.get("dwell_s", 0.25))
         trigger_db = float(conf.get("trigger_db", 8.0))
-        sample_rate = 2_400_000
-        n = 256 * 1024
 
-        sdr = RtlSdr(device_index=int(conf.get("device_index", 0)))
-        sdr.sample_rate = sample_rate
-        gain = conf.get("gain", "auto")
-        sdr.gain = gain if gain == "auto" else float(gain)
+        try:
+            sdr = RtlSdr(device_index=int(conf.get("device_index", 0)))
+        except OSError as exc:
+            log.error("rtlsdr_scan disabled: %s", exc)
+            return
 
-        # per-band rolling noise floor estimate (dB)
+        sdr.set_sample_rate(2_400_000)
+        sdr.set_gain(conf.get("gain", "auto"))
+        sdr.reset_buffer()
+        log.info("rtlsdr_scan sweeping %d bands", len(bands))
+
         floor: dict[str, float] = {}
         try:
             while not self._stop.is_set():
                 for band in bands:
                     if self._stop.is_set():
                         break
-                    centre = (band["start"] + band["stop"]) / 2
-                    sdr.center_freq = centre
+                    centre = (band["start"] + band["stop"]) // 2
+                    sdr.set_center_freq(centre)
                     self.sleep(dwell)
-                    samples = sdr.read_samples(n)
-                    power_db = 10.0 * np.log10(np.mean(np.abs(samples) ** 2) + 1e-12)
+                    power_db = sdr.read_power_db()
                     name = band["name"]
                     base = floor.get(name)
                     if base is None:
@@ -65,10 +62,6 @@ class RtlSdrScan(Source):
                                  "floor_db": round(base, 1),
                                  "delta_db": round(power_db - base, 1)}))
                     else:
-                        # slow adaptation of the noise floor toward quiet periods
                         floor[name] = base * 0.9 + power_db * 0.1
         finally:
-            try:
-                sdr.close()
-            except Exception:
-                pass
+            sdr.close()
