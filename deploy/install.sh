@@ -31,6 +31,63 @@ BRAND="DroneDingo"
 step() { printf "\033[1;36m[%s]\033[0m %s\n" "$BRAND" "$1"; }
 run()  { echo "+ $*" >>"$LOG"; "$@" >>"$LOG" 2>&1; }
 
+NM_SWITCHED=0        # set when we change the network backend (needs a reboot)
+
+# Migrate the current Wi-Fi (from wpa_supplicant) into a NetworkManager keyfile
+# so the Pi reconnects after the switch. Best-effort; skipped if no plaintext PSK.
+seed_nm_wifi() {
+  local conf=/etc/wpa_supplicant/wpa_supplicant.conf
+  [[ -f "$conf" ]] || return 0
+  local ssid psk
+  ssid="$(grep -oP '(?<=ssid=")[^"]+' "$conf" | head -1 || true)"
+  psk="$(grep -oP '(?<=psk=")[^"]+' "$conf" | head -1 || true)"
+  [[ -z "$ssid" || -z "$psk" ]] && return 0
+  local dir=/etc/NetworkManager/system-connections
+  mkdir -p "$dir"
+  cat > "$dir/$ssid.nmconnection" <<NMCON
+[connection]
+id=$ssid
+type=wifi
+autoconnect=true
+[wifi]
+mode=infrastructure
+ssid=$ssid
+[wifi-security]
+key-mgmt=wpa-psk
+psk=$psk
+[ipv4]
+method=auto
+[ipv6]
+method=auto
+NMCON
+  chmod 600 "$dir/$ssid.nmconnection"
+  echo "  • Seeded NetworkManager profile for Wi-Fi '$ssid'."
+}
+
+# Switch the Pi to NetworkManager so the admin Network tab can manage Wi-Fi/eth.
+# The change takes effect on the NEXT REBOOT, so the running session is never
+# dropped mid-install.
+ensure_networkmanager() {
+  if systemctl is-active --quiet NetworkManager; then
+    echo "  • NetworkManager already active — no change."
+    return 0
+  fi
+  # Preserve the current Wi-Fi across the switch.
+  seed_nm_wifi
+  # Preferred: raspi-config's own migration (do_netconf 1 = NetworkManager).
+  if command -v raspi-config >/dev/null 2>&1 \
+       && raspi-config nonint do_netconf 1 >>"$LOG" 2>&1; then
+    echo "  • Switched to NetworkManager via raspi-config."
+  else
+    # Manual fallback.
+    run systemctl unmask NetworkManager || true
+    run systemctl enable NetworkManager || true
+    run systemctl disable dhcpcd || true       # not --now: don't drop the link
+    echo "  • Enabled NetworkManager (manual)."
+  fi
+  NM_SWITCHED=1
+}
+
 export DEBIAN_FRONTEND=noninteractive
 
 step "Installing system components…"
@@ -47,6 +104,11 @@ if [[ ! -f /etc/modprobe.d/dronedingo-rtlsdr.conf ]]; then
   echo "blacklist dvb_usb_rtl28xxu" > /etc/modprobe.d/dronedingo-rtlsdr.conf
   run modprobe -r dvb_usb_rtl28xxu || true
 fi
+
+step "Configuring network management…"
+# Switch to NetworkManager so the dashboard can manage Wi-Fi/ethernet. Effect
+# is deferred to reboot, so this never drops the connection during install.
+ensure_networkmanager
 
 step "Placing application in $APP_DIR…"
 id -u "$SERVICE_USER" &>/dev/null || run useradd -r -m -s /usr/sbin/nologin "$SERVICE_USER"
@@ -124,3 +186,14 @@ cat <<EOF
      • RTL-SDR presence: auto-enabled if a dongle was detected.
 
 EOF
+
+if [[ "$NM_SWITCHED" == "1" ]]; then
+  cat <<EOF
+  ⚠  Network management was switched to NetworkManager.
+     REBOOT to finish the switch:  sudo reboot
+     (If this Pi joins over Wi-Fi, we pre-loaded its network so it should
+      reconnect automatically. If it doesn't come back, reconnect it and set
+      Wi-Fi from the dashboard's Settings → Network tab.)
+
+EOF
+fi
