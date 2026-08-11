@@ -26,10 +26,25 @@ def _mix(hex_color: str, other: str, amount: float) -> str:
     return "#%02x%02x%02x" % tuple(out)
 
 
-def _palette(brand: dict) -> dict:
-    """Derive map surface colours from the brand accent + a warm dark ground."""
-    ground = "#141109"
+def _palette(brand: dict, theme: str = "dark") -> dict:
+    """Derive map surface colours from the brand accent + a themed ground."""
     accent = brand.get("accent", "#E8963C")
+    if theme == "light":
+        ground = "#F1ECE2"
+        return {
+            "earth": ground,
+            "land": _mix(ground, accent, 0.05),
+            "green": _mix(ground, "#5C8A44", 0.30),
+            "water": _mix(ground, "#3E9AC4", 0.45),
+            "building": _mix(ground, "#000000", 0.08),
+            "road_minor": _mix(ground, "#000000", 0.14),
+            "road_major": _mix(ground, accent, 0.55),
+            "road_hwy": _mix(ground, accent, 0.75),
+            "boundary": _mix(ground, "#000000", 0.30),
+            "label": _mix(ground, "#000000", 0.75),
+            "label_halo": ground,
+        }
+    ground = "#141109"
     return {
         "earth": ground,
         "land": _mix(ground, accent, 0.06),
@@ -46,7 +61,15 @@ def _palette(brand: dict) -> dict:
 
 
 def _raster_style(name: str, tiles_url: str, maxzoom: int,
-                  attribution: str = "") -> dict:
+                  attribution: str = "", theme: str = "dark") -> dict:
+    if theme == "light":
+        bg = "#F1ECE2"
+        paint = {"raster-saturation": -0.15, "raster-contrast": 0.04}
+    else:
+        bg = "#141109"
+        # Tone the imagery toward the product's warm dark palette.
+        paint = {"raster-brightness-max": 0.82, "raster-saturation": -0.45,
+                 "raster-contrast": 0.12}
     return {
         "version": 8,
         "name": name,
@@ -58,14 +81,9 @@ def _raster_style(name: str, tiles_url: str, maxzoom: int,
         },
         "layers": [
             {"id": "bg", "type": "background",
-             "paint": {"background-color": "#141109"}},
+             "paint": {"background-color": bg}},
             {"id": "basemap", "type": "raster", "source": "basemap",
-             "paint": {
-                 # Tone the imagery toward the product's warm dark palette.
-                 "raster-brightness-max": 0.82,
-                 "raster-saturation": -0.45,
-                 "raster-contrast": 0.12,
-             }},
+             "paint": paint},
         ],
     }
 
@@ -157,19 +175,20 @@ def _label_layers(p: dict, schema: str) -> list[dict]:
     }]
 
 
-def build_style(cfg: dict, store=None) -> dict:
+def build_style(cfg: dict, store=None, theme: str = "dark") -> dict:
     """Return a MapLibre style document for the current configuration."""
     brand = cfg.get("brand", {})
     mapcfg = cfg.get("map", {})
     basemap = mapcfg.get("basemap") or {}
     name = brand.get("product_name", "DroneDingo")
+    theme = "light" if theme == "light" else "dark"
 
     # --- offline basemap served by the appliance --------------------------
     if store is not None:
         tiles_url = "{origin}/tiles/{z}/{x}/{y}"
         if not store.is_vector:
-            return _raster_style(name, tiles_url, store.maxzoom)
-        p = _palette(brand)
+            return _raster_style(name, tiles_url, store.maxzoom, theme=theme)
+        p = _palette(brand, theme)
         schema = (basemap.get("schema") or "protomaps").lower()
         layers = [{"id": "bg", "type": "background",
                    "paint": {"background-color": p["earth"]}}]
@@ -194,4 +213,4 @@ def build_style(cfg: dict, store=None) -> dict:
     return _raster_style(
         name, mapcfg.get("tile_url", "https://tile.openstreetmap.org/{z}/{x}/{y}.png"),
         int(mapcfg.get("max_zoom", 19)),
-        attribution="© OpenStreetMap contributors")
+        attribution="© OpenStreetMap contributors", theme=theme)

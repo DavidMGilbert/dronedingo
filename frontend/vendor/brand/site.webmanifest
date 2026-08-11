@@ -1,0 +1,13 @@
+{
+  "name": "DroneDingo",
+  "short_name": "DroneDingo",
+  "description": "Your watchdog for the sky",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#121009",
+  "theme_color": "#E8963C",
+  "icons": [
+    { "src": "/vendor/brand/mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/vendor/brand/mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

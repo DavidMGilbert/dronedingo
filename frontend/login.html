@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DroneDingo</title>
+  <link rel="icon" type="image/svg+xml" href="/vendor/brand/mark.svg" />
+  <link rel="stylesheet" href="/css/fonts.css" />
+  <style>
+    :root {
+      --bg: #121009; --panel: #1C1813; --line: #352C22; --text: #F3EDE4;
+      --muted: #A2937F; --accent: #E8963C; --on-accent: #211B12;
+    }
+    @media (prefers-color-scheme: light) {
+      :root { --bg:#F4F0E8; --panel:#FFF; --line:#E3DACB; --text:#221B12;
+              --muted:#7C6F5C; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: var(--bg); color: var(--text);
+      font: 400 15px/1.5 "Barlow", system-ui, sans-serif;
+    }
+    .card {
+      width: min(92vw, 380px); background: var(--panel);
+      border: 1px solid var(--line); border-radius: 16px; padding: 32px 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    .brand img { width: 46px; height: 46px; }
+    .brand .name {
+      font-family: "Barlow Condensed", sans-serif; font-weight: 800;
+      font-size: 30px; line-height: .9;
+    }
+    .brand .name .b2 { color: var(--accent); }
+    .tag { color: var(--muted); font-size: 13px; margin: 0 0 22px; }
+    h1 { font-size: 16px; font-weight: 600; margin: 0 0 4px; }
+    .hint { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+    label { display: block; font-size: 12px; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px;
+            font-family: "Barlow Condensed", sans-serif; font-weight: 600; }
+    input {
+      width: 100%; padding: 12px 14px; border-radius: 10px; font-size: 15px;
+      background: var(--bg); border: 1px solid var(--line); color: var(--text);
+      font-family: inherit;
+    }
+    input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    button {
+      width: 100%; margin-top: 18px; padding: 12px; border: 0; cursor: pointer;
+      border-radius: 10px; background: var(--accent); color: var(--on-accent);
+      font-family: "Barlow", sans-serif; font-weight: 600; font-size: 15px;
+    }
+    button:disabled { opacity: .6; cursor: default; }
+    .err { color: #E5484D; font-size: 13px; margin-top: 12px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <form class="card" id="loginForm" autocomplete="on">
+    <div class="brand">
+      <img src="/vendor/brand/mark.svg" alt="" />
+      <span class="name">Drone<span class="b2">Dingo</span></span>
+    </div>
+    <p class="tag">Your watchdog for the sky</p>
+
+    <h1 id="title">Sign in</h1>
+    <p class="hint" id="hint">Enter your admin password.</p>
+
+    <label for="password" id="pwLabel">Password</label>
+    <input type="password" id="password" name="password"
+           autocomplete="current-password" required minlength="8" />
+
+    <button type="submit" id="submit">Sign in</button>
+    <div class="err" id="error"></div>
+  </form>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let firstRun = false;
+
+    async function init() {
+      try {
+        const s = await (await fetch("/api/auth/status")).json();
+        if (s.authenticated) { location.href = "/"; return; }
+        firstRun = !s.configured;
+      } catch (_) {}
+      if (firstRun) {
+        $("title").textContent = "Create admin password";
+        $("hint").textContent =
+          "This is the first run. Choose a password to protect the dashboard "
+          + "(minimum 8 characters).";
+        $("pwLabel").textContent = "New password";
+        $("password").setAttribute("autocomplete", "new-password");
+        $("submit").textContent = "Create & sign in";
+      }
+    }
+
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("error").textContent = "";
+      $("submit").disabled = true;
+      try {
+        const r = await fetch("/api/auth/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: $("password").value }),
+        });
+        const d = await r.json();
+        if (r.ok && d.ok) { location.href = "/"; return; }
+        $("error").textContent = d.error || "Sign in failed.";
+      } catch (_) {
+        $("error").textContent = "Network error.";
+      } finally {
+        $("submit").disabled = false;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>

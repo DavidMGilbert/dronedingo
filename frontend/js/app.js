@@ -22,6 +22,7 @@
 
   /* ---------------------------- boot ---------------------------- */
   async function boot() {
+    initTheme();
     state.cfg = await (await fetch("/api/config")).json();
     applyBrand(state.cfg.brand);
     state.home = state.cfg.site.home;
@@ -43,10 +44,46 @@
                                   ["danger", "--danger"]]) {
       if (brand[key]) root.style.setProperty(varName, brand[key]);
     }
-    $("brandName").textContent = brand.product_name;
+    renderWordmark(brand.product_name);
     $("brandTag").textContent = brand.tagline;
     $("nodeId").textContent = state.cfg.node_id;
     document.title = brand.product_name;
+  }
+
+  /** Two-tone the wordmark like the logo: "Drone" + "Dingo". */
+  function renderWordmark(name) {
+    const el = $("brandName");
+    el.textContent = "";
+    const m = /^([A-Z][a-z]+)([A-Z].*)$/.exec(name || "");
+    if (m) {
+      const a = document.createElement("span"); a.className = "b1"; a.textContent = m[1];
+      const b = document.createElement("span"); b.className = "b2"; b.textContent = m[2];
+      el.append(a, b);
+    } else {
+      el.textContent = name || "";
+    }
+  }
+
+  /* ---------------------------- theme ---------------------------- */
+  function initTheme() {
+    const saved = localStorage.getItem("dd-theme");
+    if (saved) document.documentElement.setAttribute("data-theme", saved);
+    updateThemeButton();
+  }
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme")
+      || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  }
+  function toggleTheme() {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("dd-theme", next);
+    updateThemeButton();
+    if (window.DDMap) DDMap.setTheme(next);   // re-tone the basemap
+  }
+  function updateThemeButton() {
+    const b = $("btnTheme");
+    if (b) b.textContent = currentTheme() === "dark" ? "☀" : "☾";
   }
 
   /** Read a themed colour so canvas/SVG layers match the CSS palette. */
@@ -360,44 +397,230 @@
     $("btnPlay").textContent = "▶";
   }
 
-  /* ---------------------------- settings / home ---------------------------- */
-  function openSettings() {
+  /* ---------------------------- admin panel ---------------------------- */
+  function openSettings(tab) {
     $("homeLat").value = Number(state.home.lat).toFixed(5);
     $("homeLon").value = Number(state.home.lon).toFixed(5);
     $("homeLabel").value = state.home.label || "Home Base";
     $("settingsModal").hidden = false;
-    loadAlertStatus();
+    showTab(tab || "location");
+  }
+  function closeSettings() { $("settingsModal").hidden = true; state.pickingHome = false; }
+
+  function showTab(name) {
+    document.querySelectorAll(".admin-tab").forEach((b) =>
+      b.classList.toggle("active", b.dataset.tab === name));
+    document.querySelectorAll(".admin-pane").forEach((p) =>
+      p.classList.toggle("active", p.dataset.pane === name));
+    if (name === "alerts") loadAlertsForm();
+    else if (name === "system") loadSystem();
+    else if (name === "network") loadNetwork();
+    else if (name === "updates") checkUpdate();
   }
 
-  async function loadAlertStatus() {
-    const el = $("alertStatus");
+  /* ---- Alerts (editable) ---- */
+  async function loadAlertsForm() {
     try {
-      const a = await (await fetch("/api/alerts")).json();
-      if (a.enabled) {
-        const via = [a.ntfy_topic ? `ntfy topic “${a.ntfy_topic}”` : null,
-                     a.webhook ? "webhook" : null].filter(Boolean).join(" + ");
-        el.className = "small alert-ok";
-        el.textContent = `Active — ${via}. Alerts fire within ${a.alert_ring_m} m, `
-          + `at most once per drone every ${Math.round(a.resight_after_s / 60)} min.`;
-      } else {
-        el.className = "small alert-off";
-        el.textContent = "Not configured. Set alerts.ntfy_topic in "
-          + "config/dronedingo.yaml and restart to get phone notifications.";
-      }
-    } catch (_) { el.textContent = "Status unavailable."; }
+      const a = await (await fetch("/api/alerts/config")).json();
+      $("aNtfyTopic").value = a.ntfy_topic || "";
+      $("aNtfyServer").value = a.ntfy_server || "";
+      $("aWebhook").value = a.webhook_url || "";
+      $("aRing").value = a.alert_ring_m ?? "";
+      $("aResight").value = a.resight_after_s ?? "";
+      $("aQuiet").value = a.quiet_hours || "";
+      $("aQuietSuppress").checked = !!a.quiet_hours_suppress;
+    } catch (_) {}
   }
-
+  async function saveAlerts() {
+    const body = {
+      ntfy_topic: $("aNtfyTopic").value.trim(),
+      ntfy_server: $("aNtfyServer").value.trim(),
+      webhook_url: $("aWebhook").value.trim(),
+      alert_ring_m: $("aRing").value, resight_after_s: $("aResight").value,
+      quiet_hours: $("aQuiet").value.trim(),
+      quiet_hours_suppress: $("aQuietSuppress").checked,
+    };
+    const el = $("alertStatus"); el.textContent = "Saving…";
+    try {
+      await fetch("/api/alerts/config", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      el.className = "small alert-ok"; el.textContent = "Saved.";
+    } catch (_) { el.className = "small alert-off"; el.textContent = "Save failed."; }
+  }
   async function sendTestAlert() {
-    const el = $("alertStatus");
-    el.textContent = "Sending…";
+    const el = $("alertStatus"); el.textContent = "Sending…";
     try {
       const r = await (await fetch("/api/alerts/test", { method: "POST" })).json();
       el.className = "small " + (r.ok ? "alert-ok" : "alert-off");
-      el.textContent = r.ok ? "Test alert sent — check your phone."
-                            : `Failed: ${r.error}`;
-    } catch (e) { el.className = "small alert-off"; el.textContent = "Failed to send."; }
+      el.textContent = r.ok ? "Test sent — check your phone." : `Failed: ${r.error}`;
+    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed to send."; }
   }
-  function closeSettings() { $("settingsModal").hidden = true; state.pickingHome = false; }
+
+  /* ---- System ---- */
+  const fmtBytes = (b) => b == null ? "—"
+    : b >= 1e9 ? (b / 1073741824).toFixed(1) + " GB" : (b / 1048576).toFixed(0) + " MB";
+  const fmtUptime = (s) => {
+    if (s == null) return "—";
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+  };
+  async function loadSystem() {
+    try {
+      const s = await (await fetch("/api/system/status")).json();
+      $("sSvc").textContent = s.service || "—";
+      $("sSvc").classList.toggle("warn", s.service !== "active");
+      $("sUptime").textContent = fmtUptime(s.uptime_s);
+      $("sLoad").textContent = s.load ? s.load.join("  ") : "—";
+      $("sTemp").textContent = s.cpu_temp_c != null ? s.cpu_temp_c + " °C" : "—";
+      $("sTemp").classList.toggle("warn", (s.cpu_temp_c || 0) >= 75);
+      $("sMem").textContent = s.memory && s.memory.total
+        ? `${s.memory.percent}% of ${fmtBytes(s.memory.total)}` : "—";
+      const d = s.disk;
+      $("sDisk").textContent = d ? `${d.percent}% of ${fmtBytes(d.total)}` : "—";
+      $("sDisk").classList.toggle("warn", (d && d.percent) >= 90);
+    } catch (_) {}
+  }
+  async function doReboot() {
+    if (!confirm("Reboot the appliance now? Detection will stop for ~1 minute.")) return;
+    await fetch("/api/system/reboot", { method: "POST" });
+    setLink(false);
+  }
+
+  /* ---- Network ---- */
+  async function loadNetwork() {
+    try {
+      const n = await (await fetch("/api/system/network")).json();
+      const box = $("netInterfaces");
+      box.innerHTML = n.interfaces.length ? "" : '<p class="muted small">No interfaces reported (Linux-only).</p>';
+      for (const itf of n.interfaces) {
+        const row = document.createElement("div"); row.className = "net-row";
+        row.innerHTML = `<span><span class="ssid">${esc(itf.name)}</span> `
+          + `<span class="meta">${esc(itf.type)} · ${itf.state}</span></span>`
+          + `<span class="meta">${esc((itf.addresses || []).join(", ") || "—")}</span>`;
+        box.appendChild(row);
+      }
+      $("wifiCurrent").textContent = n.wifi ? `Connected: ${n.wifi.name}` : "Not connected to Wi-Fi.";
+    } catch (_) {}
+  }
+  async function wifiScan() {
+    const list = $("wifiList"); list.innerHTML = '<p class="muted small">Scanning…</p>';
+    try {
+      const r = await (await fetch("/api/system/wifi/scan")).json();
+      list.innerHTML = r.networks.length ? "" : '<p class="muted small">No networks found.</p>';
+      for (const net of r.networks) {
+        const row = document.createElement("div"); row.className = "net-row";
+        row.innerHTML = `<span><span class="ssid">${esc(net.ssid)}</span> `
+          + `<span class="meta">${esc(net.security)}</span></span>`
+          + `<span class="wifi-bars">${net.signal}%</span>`;
+        const btn = document.createElement("button"); btn.className = "btn ghost";
+        btn.textContent = net.active ? "Connected" : "Join"; btn.disabled = net.active;
+        btn.onclick = () => promptWifi(net.ssid);
+        row.appendChild(btn); list.appendChild(row);
+      }
+    } catch (_) { list.innerHTML = '<p class="muted small">Scan failed.</p>'; }
+  }
+  function promptWifi(ssid) {
+    $("wifiSsid").textContent = ssid; $("wifiPass").value = "";
+    $("wifiConnect").hidden = false; $("wifiPass").focus();
+  }
+  async function wifiJoin() {
+    const ssid = $("wifiSsid").textContent, password = $("wifiPass").value;
+    $("netStatus").textContent = `Connecting to ${ssid}…`;
+    try {
+      const r = await (await fetch("/api/system/wifi/connect", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ssid, password }) })).json();
+      $("netStatus").textContent = r.message || (r.ok ? "Connected." : "Failed.");
+      if (r.ok) { $("wifiConnect").hidden = true; loadNetwork(); }
+    } catch (_) { $("netStatus").textContent = "Connection failed."; }
+  }
+
+  /* ---- Updates ---- */
+  async function checkUpdate() {
+    const el = $("ddUpdateStatus"); el.textContent = "Checking…";
+    $("btnInstallUpdate").hidden = true;
+    try {
+      const u = await (await fetch("/api/update/check")).json();
+      el.className = "small " + (u.available ? "update-available" : "muted");
+      el.textContent = u.message + (u.build ? `  (build ${u.build})` : "");
+      if (u.notes) { $("updateLog").hidden = false; $("updateLog").textContent = u.notes; }
+      $("btnInstallUpdate").hidden = !u.available;
+    } catch (_) { el.textContent = "Update check failed."; }
+  }
+  async function installUpdate() {
+    if (!confirm("Install the update and restart DroneDingo now?")) return;
+    const el = $("ddUpdateStatus"); el.textContent = "Installing… the service will restart.";
+    $("btnInstallUpdate").disabled = true;
+    try {
+      const r = await (await fetch("/api/update/install", { method: "POST" })).json();
+      $("updateLog").hidden = false; $("updateLog").textContent = r.output || r.message;
+      el.textContent = r.message;
+    } catch (_) {
+      el.textContent = "Reconnecting after restart…";
+      setTimeout(() => location.reload(), 8000);
+    } finally { $("btnInstallUpdate").disabled = false; }
+  }
+  async function checkOS() {
+    const el = $("osUpdateStatus"); el.textContent = "Checking… this can take a minute.";
+    $("btnInstallOS").hidden = true;
+    try {
+      const r = await (await fetch("/api/update/os/check")).json();
+      el.className = "small " + (r.upgradable ? "update-available" : "muted");
+      el.textContent = r.message;
+      $("btnInstallOS").hidden = !r.upgradable;
+    } catch (_) { el.textContent = "OS update check failed."; }
+  }
+  async function installOS() {
+    if (!confirm("Install operating-system updates now? This can take several minutes.")) return;
+    const el = $("osUpdateStatus"); el.textContent = "Installing OS updates…";
+    $("btnInstallOS").disabled = true;
+    try {
+      const r = await (await fetch("/api/update/os/install", { method: "POST" })).json();
+      el.textContent = r.message;
+    } catch (_) { el.textContent = "OS update failed."; }
+    finally { $("btnInstallOS").disabled = false; }
+  }
+
+  /* ---- Account ---- */
+  async function changePassword() {
+    const el = $("pwStatus");
+    try {
+      const r = await fetch("/api/auth/password", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current: $("pwCurrent").value, new: $("pwNew").value }) });
+      const d = await r.json();
+      el.className = "small " + (d.ok ? "alert-ok" : "alert-off");
+      el.textContent = d.ok ? "Password updated." : (d.error || "Failed.");
+      if (d.ok) { $("pwCurrent").value = ""; $("pwNew").value = ""; }
+    } catch (_) { el.className = "small alert-off"; el.textContent = "Failed."; }
+  }
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    location.href = "/login";
+  }
+
+  /* ---------------------------- About ---------------------------- */
+  async function openAbout() {
+    $("aboutModal").hidden = false;
+    try {
+      const a = await (await fetch("/api/about")).json();
+      renderWordmarkInto($("aboutName"), a.brand.product_name);
+      $("aboutTag").textContent = a.brand.tagline || "";
+      $("aboutVersion").textContent = a.version.version || "—";
+      $("aboutBuild").textContent = a.version.build || a.version.channel || "—";
+      $("aboutNode").textContent = a.node_id || "—";
+      $("aboutCopyright").textContent = a.brand.copyright || "";
+    } catch (_) {}
+  }
+  function renderWordmarkInto(el, name) {
+    el.textContent = "";
+    const m = /^([A-Z][a-z]+)([A-Z].*)$/.exec(name || "");
+    if (m) {
+      const a = document.createElement("span"); a.className = "b1"; a.textContent = m[1];
+      const b = document.createElement("span"); b.className = "b2"; b.textContent = m[2];
+      el.append(a, b);
+    } else { el.textContent = name || ""; }
+  }
   function setHomeFromLatLng(lat, lon) {
     $("homeLat").value = lat.toFixed(5); $("homeLon").value = lon.toFixed(5);
     $("homeHint").textContent = `Picked ${lat.toFixed(5)}, ${lon.toFixed(5)} — press Save.`;
@@ -421,10 +644,36 @@
 
   /* ---------------------------- UI wiring ---------------------------- */
   function wireUI() {
-    $("btnSettings").onclick = openSettings;
+    $("btnSettings").onclick = () => openSettings();
     $("btnCloseSettings").onclick = closeSettings;
     $("btnSaveHome").onclick = saveHome;
+    $("btnTheme").onclick = toggleTheme;
+    $("btnAbout").onclick = openAbout;
+    $("btnCloseAbout").onclick = () => { $("aboutModal").hidden = true; };
+    $("aboutToUpdates").onclick = (e) => {
+      e.preventDefault(); $("aboutModal").hidden = true; openSettings("updates");
+    };
+    // admin tabs
+    document.querySelectorAll(".admin-tab").forEach((b) =>
+      b.onclick = () => showTab(b.dataset.tab));
+    // alerts
     $("btnTestAlert").onclick = sendTestAlert;
+    $("btnSaveAlerts").onclick = saveAlerts;
+    // system
+    $("btnRefreshSys").onclick = loadSystem;
+    $("btnReboot").onclick = doReboot;
+    // network
+    $("btnWifiScan").onclick = wifiScan;
+    $("btnWifiJoin").onclick = wifiJoin;
+    $("btnWifiCancel").onclick = () => { $("wifiConnect").hidden = true; };
+    // updates
+    $("btnCheckUpdate").onclick = checkUpdate;
+    $("btnInstallUpdate").onclick = installUpdate;
+    $("btnCheckOS").onclick = checkOS;
+    $("btnInstallOS").onclick = installOS;
+    // account
+    $("btnChangePw").onclick = changePassword;
+    $("btnLogout").onclick = logout;
     $("btnUseMap").onclick = () => { state.pickingHome = true; $("settingsModal").hidden = true;
       $("homeHint").textContent = "Click the map to drop the marker…"; };
     $("btnLive").onclick = enterLive;

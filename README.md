@@ -125,6 +125,10 @@ Everything lives in [`config/dronedingo.yaml`](config/dronedingo.yaml):
 - [x] Single-command unattended installer
 - [x] DJI proprietary DroneID decode (v1/v2, incl. operator position)
 - [x] Phone push alerts (ntfy) + webhook
+- [x] Offline vector basemap (appliance-served MapLibre)
+- [x] Login-gated UI + admin panel (system/network/alerts/updates)
+- [x] Light / dark themes; DroneDingo brand + Barlow type
+- [x] In-UI updates (DroneDingo + OS)
 - [ ] Multi-node fusion (triangulate non-GPS RF hits across sensors)
 - [ ] Acoustic night-time detector
 - [ ] Offline vector basemap bundle

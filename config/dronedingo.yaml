@@ -6,12 +6,14 @@
 brand:
   product_name: "DroneDingo"
   tagline: "Your watchdog for the sky"
+  copyright: "© 2026 David M. Gilbert. All rights reserved."
+  website: null              # shown in the About dialog if set
   # Palette — "outback" warm ochre on warm charcoal. Every colour below drives
   # the UI *and* the map style, so re-theming the product is a config change.
   accent: "#E8963C"          # primary — brand, drone contacts
-  accent_alt: "#46D6C4"      # secondary — operator (pilot) positions
-  home: "#6C8CFF"            # Home Base marker + range rings
-  danger: "#FF5A5F"          # proximity breach / threat state
+  accent_alt: "#16A99A"      # secondary — operator (pilot) positions
+  home: "#4E6BE6"            # Home Base marker + range rings
+  danger: "#E5484D"          # proximity breach / threat state
 
 site:
   node_id: "dingo-01"        # unique id for this receiver node
@@ -85,6 +87,18 @@ alerts:
   # Overnight is exactly when theft happens, so quiet hours do NOT suppress
   # alerts unless you explicitly opt in here.
   quiet_hours_suppress: false
+
+updates:
+  # git checkout (default appliance) checks the tracked branch; set a
+  # manifest_url instead to check a hosted release document for a SaaS fleet.
+  branch: "main"
+  manifest_url: null         # e.g. "https://updates.dronedingo.io/latest.json"
+
+auth:
+  # The web UI is gated behind a login. On first visit you set the admin
+  # password; it is stored hashed (PBKDF2) in data/state.json, never here.
+  enabled: true
+  session_hours: 168         # how long a login stays valid
 
 server:
   host: "0.0.0.0"

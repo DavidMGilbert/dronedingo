@@ -79,6 +79,17 @@ fi
 
 chown -R "$SERVICE_USER":"$SERVICE_USER" "$APP_DIR"
 
+step "Authorising privileged actions (updates, network, reboot)…"
+# The web process runs unprivileged; these narrow sudoers rules let it invoke
+# ONLY the two helper scripts (and nothing else) without a password. The
+# helpers themselves constrain what can be done.
+chmod +x "$APP_DIR/deploy/update.sh" "$APP_DIR/deploy/sysctl.sh" 2>/dev/null || true
+cat > /etc/sudoers.d/dronedingo <<SUDO
+$SERVICE_USER ALL=(root) NOPASSWD: /usr/bin/bash $APP_DIR/deploy/update.sh, /bin/bash $APP_DIR/deploy/update.sh, /usr/bin/bash $APP_DIR/deploy/sysctl.sh, /bin/bash $APP_DIR/deploy/sysctl.sh
+SUDO
+chmod 440 /etc/sudoers.d/dronedingo
+visudo -c -f /etc/sudoers.d/dronedingo >/dev/null 2>&1 || { echo "sudoers check failed"; rm -f /etc/sudoers.d/dronedingo; }
+
 step "Installing and starting the service…"
 cp "$APP_DIR/deploy/dronedingo.service" /etc/systemd/system/dronedingo.service
 run systemctl daemon-reload

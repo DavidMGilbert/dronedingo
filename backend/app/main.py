@@ -11,15 +11,19 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.responses import JSONResponse, FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import config as cfg
+from . import auth, system, updater
 from .db import DB
 from .hub import Hub
 from .manager import Manager
 from .mapstyle import build_style
 from .tiles import TileStore
+from . import __version__
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -76,6 +80,77 @@ async def _prune_loop():
 
 app = FastAPI(title="DroneDingo", lifespan=lifespan)
 
+_AUTH_ENABLED = bool((cfg.load().get("auth") or {}).get("enabled", True))
+_SESSION_HOURS = int((cfg.load().get("auth") or {}).get("session_hours", 168))
+
+# Paths reachable without a session: the login flow and unbranded static assets.
+_PUBLIC_PREFIXES = ("/login", "/api/auth", "/css/", "/js/", "/vendor/", "/favicon")
+
+
+def _is_public(path: str) -> bool:
+    return path == "/login" or any(path.startswith(p) for p in _PUBLIC_PREFIXES)
+
+
+async def _auth_guard(request: Request, call_next):
+    if not _AUTH_ENABLED or _is_public(request.url.path):
+        return await call_next(request)
+    if request.session.get("uid"):
+        return await call_next(request)
+    # Unauthenticated: APIs get 401, page requests get redirected to login.
+    if request.url.path.startswith(("/api/", "/tiles/")):
+        return JSONResponse({"error": "authentication required"}, status_code=401)
+    return RedirectResponse("/login")
+
+
+# Middleware order matters: the LAST added runs OUTERMOST. SessionMiddleware
+# must wrap the guard so request.session is populated before the guard reads it.
+app.add_middleware(BaseHTTPMiddleware, dispatch=_auth_guard)   # inner
+app.add_middleware(                                            # outer
+    SessionMiddleware, secret_key=auth.session_secret(),
+    max_age=_SESSION_HOURS * 3600, same_site="lax", https_only=False,
+)
+
+
+# ----------------------------- Auth ----------------------------------------
+@app.get("/api/auth/status")
+async def api_auth_status(request: Request):
+    return {"authenticated": bool(request.session.get("uid")),
+            "configured": auth.is_configured(),
+            "auth_enabled": _AUTH_ENABLED}
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(request: Request, payload: dict):
+    password = payload.get("password", "")
+    # First run: no password set yet — this call creates the admin password.
+    if not auth.is_configured():
+        try:
+            auth.set_password(password)
+        except ValueError as exc:
+            return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+        request.session["uid"] = "admin"
+        return {"ok": True, "created": True}
+    if auth.verify(password):
+        request.session["uid"] = "admin"
+        return {"ok": True}
+    return JSONResponse({"ok": False, "error": "Incorrect password."},
+                        status_code=401)
+
+
+@app.post("/api/auth/logout")
+async def api_auth_logout(request: Request):
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.post("/api/auth/password")
+async def api_auth_password(request: Request, payload: dict):
+    try:
+        auth.change_password(payload.get("current", ""), payload.get("new", ""))
+    except (PermissionError, ValueError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return {"ok": True}
+
 
 # ----------------------------- REST API ------------------------------------
 @app.get("/api/config")
@@ -121,9 +196,9 @@ async def api_bounds():
 
 
 @app.get("/api/map/style")
-async def api_map_style(request: Request):
+async def api_map_style(request: Request, theme: str = "dark"):
     """MapLibre style, generated from the brand palette + basemap source."""
-    style = build_style(cfg.load(), tile_store)
+    style = build_style(cfg.load(), tile_store, theme=theme)
     # Tile URLs must be absolute for MapLibre; fill in this request's origin.
     origin = str(request.base_url).rstrip("/")
     for src in style.get("sources", {}).values():
@@ -168,14 +243,114 @@ async def api_alerts_status():
     }
 
 
+@app.get("/api/alerts/config")
+async def api_alerts_config():
+    """Full alerts config for the settings form."""
+    a = (cfg.load().get("alerts") or {})
+    return {
+        "ntfy_topic": a.get("ntfy_topic"),
+        "ntfy_server": a.get("ntfy_server") or "https://ntfy.sh",
+        "webhook_url": a.get("webhook_url"),
+        "alert_ring_m": manager.alerter.ring_m,
+        "resight_after_s": a.get("resight_after_s", 300),
+        "quiet_hours": a.get("quiet_hours"),
+        "quiet_hours_suppress": bool(a.get("quiet_hours_suppress", False)),
+    }
+
+
+@app.post("/api/alerts/config")
+async def api_alerts_config_save(payload: dict):
+    """Persist alert settings from the UI and reload the alerter."""
+    allowed = ("ntfy_topic", "ntfy_server", "webhook_url", "alert_ring_m",
+               "resight_after_s", "quiet_hours", "quiet_hours_suppress")
+    values = {}
+    for k in allowed:
+        if k not in payload:
+            continue
+        v = payload[k]
+        if isinstance(v, str) and v.strip() == "":
+            v = None                        # empty field clears the override
+        if k in ("alert_ring_m", "resight_after_s") and v is not None:
+            v = float(v)
+        values[k] = v
+    cfg.save_settings("alerts", values)
+    manager.reload_alerter()
+    return {"ok": True}
+
+
 @app.post("/api/alerts/test")
 async def api_alerts_test():
     return await asyncio.to_thread(manager.alerter.test)
 
 
+# ----------------------------- System / admin ------------------------------
+@app.get("/api/system/status")
+async def api_system_status():
+    return await asyncio.to_thread(system.status)
+
+
+@app.get("/api/system/network")
+async def api_system_network():
+    interfaces = await asyncio.to_thread(system.interfaces)
+    current = await asyncio.to_thread(system.wifi_current)
+    return {"interfaces": interfaces, "wifi": current}
+
+
+@app.get("/api/system/wifi/scan")
+async def api_wifi_scan():
+    return {"networks": await asyncio.to_thread(system.wifi_scan)}
+
+
+@app.post("/api/system/wifi/connect")
+async def api_wifi_connect(payload: dict):
+    return await asyncio.to_thread(
+        system.wifi_connect, payload.get("ssid", ""),
+        payload.get("password", ""), payload.get("iface"))
+
+
+@app.post("/api/system/reboot")
+async def api_system_reboot():
+    return await asyncio.to_thread(system.reboot)
+
+
+# ----------------------------- Updates -------------------------------------
+@app.get("/api/update/check")
+async def api_update_check():
+    return await asyncio.to_thread(updater.check)
+
+
+@app.post("/api/update/install")
+async def api_update_install():
+    return await asyncio.to_thread(updater.install)
+
+
+@app.get("/api/update/os/check")
+async def api_os_check():
+    return await asyncio.to_thread(system.os_update_check)
+
+
+@app.post("/api/update/os/install")
+async def api_os_install():
+    return await asyncio.to_thread(system.os_update_install)
+
+
+@app.get("/api/about")
+async def api_about():
+    c = cfg.load()
+    return {
+        "brand": c["brand"],
+        "node_id": c["site"]["node_id"],
+        "version": updater.current_version(),
+    }
+
+
 # ----------------------------- WebSocket -----------------------------------
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
+    # The session cookie is available on the WS scope via SessionMiddleware.
+    if _AUTH_ENABLED and not ws.session.get("uid"):
+        await ws.close(code=1008)          # policy violation
+        return
     await hub.connect(ws)
     try:
         while True:
@@ -186,7 +361,35 @@ async def ws_endpoint(ws: WebSocket):
         hub.disconnect(ws)
 
 
+# ----------------------------- Docs (legal / notices) ----------------------
+def _doc_response(name: str) -> Response:
+    path = BASE / "docs" / name if name != "NOTICES.md" else BASE / name
+    if not path.exists():
+        return Response("Not found", status_code=404)
+    return FileResponse(path, media_type="text/markdown; charset=utf-8")
+
+
+@app.get("/docs/legal")
+async def doc_legal():
+    return _doc_response("LEGAL.md")
+
+
+@app.get("/docs/notices")
+async def doc_notices():
+    return _doc_response("NOTICES.md")
+
+
+@app.get("/docs/alerts")
+async def doc_alerts():
+    return _doc_response("ALERTS.md")
+
+
 # ----------------------------- Static UI -----------------------------------
+@app.get("/login")
+async def login_page():
+    return FileResponse(FRONTEND / "login.html")
+
+
 @app.get("/")
 async def index():
     return FileResponse(FRONTEND / "index.html")

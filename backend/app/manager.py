@@ -47,6 +47,10 @@ class Manager:
         self._consumer: asyncio.Task | None = None
         self.alerter = Alerter(cfg.load())
 
+    def reload_alerter(self) -> None:
+        """Rebuild the alerter after a settings change from the UI."""
+        self.alerter = Alerter(cfg.load())
+
     def _emit(self, det: Detection) -> None:
         """Thread-safe hand-off from a source thread to the event loop."""
         if self.loop is None:

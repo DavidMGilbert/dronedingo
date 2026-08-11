@@ -1,0 +1,22 @@
+/* DroneDingo type — Barlow (body) + Barlow Condensed ExtraBold (display).
+   Vendored latin subsets so the appliance renders correctly with no internet. */
+@font-face {
+  font-family: "Barlow";
+  font-style: normal; font-weight: 400; font-display: swap;
+  src: url("/vendor/fonts/barlow-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow";
+  font-style: normal; font-weight: 500; font-display: swap;
+  src: url("/vendor/fonts/barlow-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow";
+  font-style: normal; font-weight: 600; font-display: swap;
+  src: url("/vendor/fonts/barlow-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow Condensed";
+  font-style: normal; font-weight: 800; font-display: swap;
+  src: url("/vendor/fonts/barlowcondensed-800.woff2") format("woff2");
+}

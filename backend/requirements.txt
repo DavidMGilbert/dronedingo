@@ -5,6 +5,7 @@ fastapi>=0.111
 uvicorn[standard]>=0.30
 pyyaml>=6.0
 aiosqlite>=0.20
+itsdangerous>=2.1        # signs the session cookie (Starlette SessionMiddleware)
 
 # System package (installed via apt, not pip, and never redistributed by us):
 #   librtlsdr0   — provides the librtlsdr.so our ctypes binding loads

@@ -23,6 +23,12 @@ window.DDMap = (() => {
     getComputedStyle(document.documentElement).getPropertyValue(name).trim()
     || fallback;
 
+  const uiTheme = () =>
+    document.documentElement.getAttribute("data-theme")
+    || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+
+  const styleURL = () => `/api/map/style?theme=${uiTheme()}`;
+
   /** Run once the style is loaded, or immediately if it already is. */
   function whenReady(fn) { ready ? fn() : pending.push(fn); }
 
@@ -89,7 +95,7 @@ window.DDMap = (() => {
     async init({ container, center, zoom, onClick }) {
       map = new maplibregl.Map({
         container,
-        style: "/api/map/style",
+        style: styleURL(),
         center: [center.lon, center.lat],
         zoom: zoom || 15,
         attributionControl: false,
@@ -201,9 +207,12 @@ window.DDMap = (() => {
     /** Re-apply the style (used after a theme or basemap change). */
     reloadStyle() {
       whenReady(() => {
-        map.setStyle("/api/map/style");
+        map.setStyle(styleURL());
         map.once("styledata", () => { ensureOverlays(); pushTracks(); });
       });
     },
+
+    /** Re-tone the basemap for the given UI theme. */
+    setTheme(_theme) { this.reloadStyle(); },
   };
 })();

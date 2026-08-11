@@ -4,38 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DroneDingo</title>
+  <link rel="stylesheet" href="/css/fonts.css" />
   <link rel="stylesheet" href="/vendor/maplibre/maplibre-gl.css" />
   <link rel="stylesheet" href="/css/style.css" />
   <link rel="icon" type="image/svg+xml" href="/vendor/brand/mark.svg" />
+  <link rel="apple-touch-icon" href="/vendor/brand/mark.svg" />
+  <link rel="manifest" href="/vendor/brand/site.webmanifest" />
+  <meta name="theme-color" content="#E8963C" />
 </head>
 <body>
   <!-- ============================ HEADER ============================ -->
   <header class="topbar">
     <div class="brand">
-      <!-- PLACEHOLDER MARK — swap for the supplied DroneDingo logo. -->
-      <svg class="brand-mark" viewBox="0 0 40 40" aria-label="DroneDingo">
-        <defs>
-          <linearGradient id="ddMark" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%"  stop-color="var(--accent)" stop-opacity="1"/>
-            <stop offset="100%" stop-color="var(--accent)" stop-opacity=".7"/>
-          </linearGradient>
-        </defs>
-        <!-- dingo head, ears alert -->
-        <path class="mk-head"
-              d="M20 36.5C14.2 32.6 10.4 25.6 10.0 17.2L7.0 4.2l8.7 6.4a13.6 13.6 0 0 1 8.6 0l8.7-6.4-3.0 13.0C29.6 25.6 25.8 32.6 20 36.5Z"/>
-        <circle class="mk-eye" cx="15.9" cy="18.4" r="1.75"/>
-        <circle class="mk-eye" cx="24.1" cy="18.4" r="1.75"/>
-        <path class="mk-eye"
-              d="M20 24.2c-1.5 0-2.4.9-2.4 1.9 0 1.2 1.2 2.1 2.4 3 1.2-.9 2.4-1.8 2.4-3 0-1-.9-1.9-2.4-1.9Z"/>
-        <!-- detection arcs -->
-        <g class="mk-arcs">
-          <path d="M32.6 12.4a6.2 6.2 0 0 1 3.9 3.0"/>
-          <path d="M34.2 8.6a10.4 10.4 0 0 1 4.6 4.4"/>
-        </g>
-      </svg>
+      <img class="brand-mark" src="/vendor/brand/mark.svg" alt="DroneDingo" />
       <div class="brand-text">
         <span class="brand-name" id="brandName">DroneDingo</span>
-        <span class="brand-tag" id="brandTag">Know what's in your sky.</span>
+        <span class="brand-tag" id="brandTag">Your watchdog for the sky</span>
       </div>
     </div>
 
@@ -55,6 +39,8 @@
         <span class="status-num" id="clock">--:--:--</span>
         <span class="status-lbl">LOCAL</span>
       </div>
+      <button class="icon-btn" id="btnTheme" title="Toggle light / dark">☀</button>
+      <button class="icon-btn" id="btnAbout" title="About">ⓘ</button>
       <button class="icon-btn" id="btnSettings" title="Settings">⚙</button>
     </div>
   </header>
@@ -118,36 +104,177 @@
     </div>
   </footer>
 
-  <!-- ============================ SETTINGS MODAL ============================ -->
+  <!-- ============================ ADMIN PANEL ============================ -->
   <div class="modal-scrim" id="settingsModal" hidden>
-    <div class="modal">
+    <div class="modal admin">
       <div class="modal-head">
-        <h2>Home Base</h2>
+        <h2>Settings</h2>
         <button class="icon-btn" id="btnCloseSettings">✕</button>
       </div>
-      <p class="muted">
-        Set the receiver's location. Range and bearing to every contact are
-        measured from here. Click the map to drop the marker, or type
-        coordinates.
-      </p>
-      <label>Label <input type="text" id="homeLabel" placeholder="Home Base" /></label>
-      <div class="coord-row">
-        <label>Latitude <input type="number" step="0.00001" id="homeLat" /></label>
-        <label>Longitude <input type="number" step="0.00001" id="homeLon" /></label>
-      </div>
-      <p class="muted small" id="homeHint">Tip: click anywhere on the map while this is open to pick a spot.</p>
-      <div class="modal-actions">
-        <button class="btn ghost" id="btnUseMap">Pick on map</button>
-        <button class="btn primary" id="btnSaveHome">Save location</button>
-      </div>
 
-      <div class="modal-section">
-        <h2>Phone Alerts</h2>
-        <p class="muted small" id="alertStatus">Checking…</p>
-        <div class="modal-actions">
-          <button class="btn ghost" id="btnTestAlert">Send test alert</button>
+      <div class="admin-body">
+        <nav class="admin-nav" id="adminNav">
+          <button class="admin-tab active" data-tab="location">Location</button>
+          <button class="admin-tab" data-tab="alerts">Alerts</button>
+          <button class="admin-tab" data-tab="system">System</button>
+          <button class="admin-tab" data-tab="network">Network</button>
+          <button class="admin-tab" data-tab="updates">Updates</button>
+          <button class="admin-tab" data-tab="account">Account</button>
+        </nav>
+
+        <div class="admin-panes">
+          <!-- LOCATION -->
+          <section class="admin-pane active" data-pane="location">
+            <p class="muted">Set the receiver's location. Range and bearing to
+              every contact are measured from here. Click the map to drop the
+              marker, or type coordinates.</p>
+            <label>Label <input type="text" id="homeLabel" placeholder="Home Base" /></label>
+            <div class="coord-row">
+              <label>Latitude <input type="number" step="0.00001" id="homeLat" /></label>
+              <label>Longitude <input type="number" step="0.00001" id="homeLon" /></label>
+            </div>
+            <p class="muted small" id="homeHint">Tip: click anywhere on the map while this is open to pick a spot.</p>
+            <div class="modal-actions">
+              <button class="btn ghost" id="btnUseMap">Pick on map</button>
+              <button class="btn primary" id="btnSaveHome">Save location</button>
+            </div>
+          </section>
+
+          <!-- ALERTS -->
+          <section class="admin-pane" data-pane="alerts">
+            <p class="muted">Phone alerts fire when a drone comes within the
+              alert range of Home Base. Uses ntfy — free, no account.
+              <a href="/docs/alerts" target="_blank" rel="noopener">Setup guide</a></p>
+            <label>ntfy topic
+              <input type="text" id="aNtfyTopic" placeholder="dronedingo-yourfarm-7fq2p8xk" /></label>
+            <label>ntfy server
+              <input type="text" id="aNtfyServer" placeholder="https://ntfy.sh" /></label>
+            <label>Webhook URL (optional)
+              <input type="text" id="aWebhook" placeholder="https://…" /></label>
+            <div class="coord-row">
+              <label>Alert range (m)
+                <input type="number" id="aRing" min="10" step="10" /></label>
+              <label>Re-alert after (s)
+                <input type="number" id="aResight" min="0" step="30" /></label>
+            </div>
+            <div class="coord-row">
+              <label>Quiet hours
+                <input type="text" id="aQuiet" placeholder="22:00-06:00" /></label>
+              <label class="chk">
+                <input type="checkbox" id="aQuietSuppress" />
+                <span>Silence during quiet hours</span></label>
+            </div>
+            <div class="modal-actions">
+              <button class="btn ghost" id="btnTestAlert">Send test</button>
+              <button class="btn primary" id="btnSaveAlerts">Save alerts</button>
+            </div>
+            <p class="muted small" id="alertStatus"></p>
+          </section>
+
+          <!-- SYSTEM -->
+          <section class="admin-pane" data-pane="system">
+            <div class="stat-grid" id="sysStats">
+              <div class="stat"><span class="stat-lbl">Service</span><span class="stat-val" id="sSvc">—</span></div>
+              <div class="stat"><span class="stat-lbl">Uptime</span><span class="stat-val" id="sUptime">—</span></div>
+              <div class="stat"><span class="stat-lbl">CPU load</span><span class="stat-val" id="sLoad">—</span></div>
+              <div class="stat"><span class="stat-lbl">CPU temp</span><span class="stat-val" id="sTemp">—</span></div>
+              <div class="stat"><span class="stat-lbl">Memory</span><span class="stat-val" id="sMem">—</span></div>
+              <div class="stat"><span class="stat-lbl">Disk</span><span class="stat-val" id="sDisk">—</span></div>
+            </div>
+            <div class="modal-actions">
+              <button class="btn ghost" id="btnRefreshSys">Refresh</button>
+              <button class="btn danger" id="btnReboot">Reboot appliance</button>
+            </div>
+          </section>
+
+          <!-- NETWORK -->
+          <section class="admin-pane" data-pane="network">
+            <h3 class="pane-h">Interfaces</h3>
+            <div id="netInterfaces" class="net-list"><p class="muted small">Loading…</p></div>
+            <h3 class="pane-h">Wi-Fi</h3>
+            <p class="muted small" id="wifiCurrent">—</p>
+            <div id="wifiList" class="net-list"></div>
+            <div class="modal-actions">
+              <button class="btn ghost" id="btnWifiScan">Scan networks</button>
+            </div>
+            <div id="wifiConnect" hidden>
+              <label>Password for “<span id="wifiSsid"></span>”
+                <input type="password" id="wifiPass" /></label>
+              <div class="modal-actions">
+                <button class="btn ghost" id="btnWifiCancel">Cancel</button>
+                <button class="btn primary" id="btnWifiJoin">Connect</button>
+              </div>
+            </div>
+            <p class="muted small" id="netStatus"></p>
+          </section>
+
+          <!-- UPDATES -->
+          <section class="admin-pane" data-pane="updates">
+            <h3 class="pane-h">DroneDingo software</h3>
+            <p class="muted small" id="ddUpdateStatus">Checking…</p>
+            <div class="modal-actions">
+              <button class="btn ghost" id="btnCheckUpdate">Check now</button>
+              <button class="btn primary" id="btnInstallUpdate" hidden>Install update</button>
+            </div>
+            <pre class="update-log" id="updateLog" hidden></pre>
+
+            <h3 class="pane-h">Operating system</h3>
+            <p class="muted small" id="osUpdateStatus">Not checked.</p>
+            <div class="modal-actions">
+              <button class="btn ghost" id="btnCheckOS">Check OS updates</button>
+              <button class="btn primary" id="btnInstallOS" hidden>Install OS updates</button>
+            </div>
+          </section>
+
+          <!-- ACCOUNT -->
+          <section class="admin-pane" data-pane="account">
+            <h3 class="pane-h">Change password</h3>
+            <label>Current password <input type="password" id="pwCurrent" autocomplete="current-password" /></label>
+            <label>New password <input type="password" id="pwNew" autocomplete="new-password" minlength="8" /></label>
+            <div class="modal-actions">
+              <button class="btn primary" id="btnChangePw">Update password</button>
+            </div>
+            <p class="muted small" id="pwStatus"></p>
+            <div class="modal-section">
+              <div class="modal-actions">
+                <button class="btn ghost" id="btnLogout">Sign out</button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ============================ ABOUT MODAL ============================ -->
+  <div class="modal-scrim" id="aboutModal" hidden>
+    <div class="modal about">
+      <div class="modal-head">
+        <h2>About</h2>
+        <button class="icon-btn" id="btnCloseAbout">✕</button>
+      </div>
+
+      <div class="about-brand">
+        <img class="about-logo" id="aboutLogo" src="/vendor/brand/mark.svg" alt="" />
+        <div>
+          <div class="about-name" id="aboutName">DroneDingo</div>
+          <div class="about-tag" id="aboutTag">Your watchdog for the sky</div>
+        </div>
+      </div>
+
+      <dl class="about-facts">
+        <div><dt>Version</dt><dd id="aboutVersion">—</dd></div>
+        <div><dt>Build</dt><dd id="aboutBuild">—</dd></div>
+        <div><dt>Node</dt><dd id="aboutNode">—</dd></div>
+      </dl>
+      <p class="muted small about-updhint">Software &amp; OS updates are in
+        <a href="#" id="aboutToUpdates">Settings → Updates</a>.</p>
+
+      <div class="about-links">
+        <a href="/docs/legal" id="linkLegal" target="_blank" rel="noopener">Legal &amp; privacy</a>
+        <a href="/docs/notices" id="linkNotices" target="_blank" rel="noopener">Open-source notices</a>
+      </div>
+      <p class="about-copyright" id="aboutCopyright"></p>
     </div>
   </div>
 

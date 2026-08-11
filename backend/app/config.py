@@ -33,10 +33,27 @@ def _load_state() -> dict[str, Any]:
     return {}
 
 
+def _deep_merge(base: dict, over: dict) -> None:
+    """Recursively merge ``over`` into ``base`` in place."""
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        else:
+            base[k] = v
+
+
+# Config sections the UI is allowed to override via state.json.
+_EDITABLE_SECTIONS = ("alerts", "map", "site", "updates")
+
+
 def load() -> dict[str, Any]:
     """Return the merged configuration (static YAML + mutable state)."""
     cfg = _load_yaml()
     state = _load_state()
+    # UI-edited settings overrides (alerts, map, etc.), layered over the YAML.
+    for section, values in (state.get("settings") or {}).items():
+        if section in _EDITABLE_SECTIONS and isinstance(values, dict):
+            _deep_merge(cfg.setdefault(section, {}), values)
     if "home" in state:
         cfg["site"]["home"].update(state["home"])
     # runtime source enable/disable overrides (set by installer autodetect or UI)
@@ -44,6 +61,20 @@ def load() -> dict[str, Any]:
         cfg["sources"].setdefault(name, {})["enabled"] = bool(enabled)
     cfg["_state"] = state
     return cfg
+
+
+def save_settings(section: str, values: dict) -> None:
+    """Persist a UI settings override for one config section."""
+    if section not in _EDITABLE_SECTIONS:
+        raise ValueError(f"section '{section}' is not editable")
+    DATA_DIR.mkdir(exist_ok=True)
+    with _lock:
+        state = _load_state()
+        settings = state.setdefault("settings", {})
+        current = settings.setdefault(section, {})
+        _deep_merge(current, values)
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
 
 
 def get_home() -> dict[str, Any]:
@@ -67,6 +98,21 @@ def set_home(lat: float, lon: float, label: str | None = None) -> dict[str, Any]
         with open(STATE_PATH, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
     return home
+
+
+def get_state() -> dict:
+    return _load_state()
+
+
+def update_state(**values) -> dict:
+    """Merge top-level keys into the persisted runtime state."""
+    DATA_DIR.mkdir(exist_ok=True)
+    with _lock:
+        state = _load_state()
+        state.update(values)
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2)
+        return state
 
 
 def set_source_enabled(name: str, enabled: bool) -> None:
