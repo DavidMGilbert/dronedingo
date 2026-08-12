@@ -218,8 +218,12 @@ class TestAlerts(unittest.TestCase):
         return Alerter(conf)
 
     def test_disabled_without_target(self):
-        self.assertFalse(Alerter({"alerts": {}}).enabled)
-        self.assertFalse(Alerter({}).enabled)
+        # Isolate from any DroneDingo Push devices registered on this machine —
+        # this asserts the ntfy/webhook side is off when unconfigured.
+        from unittest import mock
+        with mock.patch("app.alerts.push.subscription_count", return_value=0):
+            self.assertFalse(Alerter({"alerts": {}}).enabled)
+            self.assertFalse(Alerter({}).enabled)
 
     def test_fires_once_per_sighting(self):
         a = self._alerter()
