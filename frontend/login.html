@@ -96,7 +96,11 @@
     async function init() {
       try {
         const s = await (await fetch("/api/auth/status")).json();
-        if (s.authenticated) { location.href = "/"; return; }
+        if (s.authenticated) {
+          const nxt = new URLSearchParams(location.search).get("next");
+          location.href = (nxt && nxt.startsWith("/") && !nxt.startsWith("//")) ? nxt : "/";
+          return;
+        }
         firstRun = !s.configured;
       } catch (_) {}
       if (firstRun) {
@@ -120,7 +124,11 @@
           body: JSON.stringify({ email: $("email").value, password: $("password").value }),
         });
         const d = await r.json();
-        if (r.ok && d.ok) { location.href = "/"; return; }
+        if (r.ok && d.ok) {
+          const nxt = new URLSearchParams(location.search).get("next");
+          location.href = (nxt && nxt.startsWith("/") && !nxt.startsWith("//")) ? nxt : "/";
+          return;
+        }
         $("error").textContent = d.error || "Sign in failed.";
       } catch (_) {
         $("error").textContent = "Network error.";

@@ -103,7 +103,9 @@ async def _auth_guard(request: Request, call_next):
     if _AUTH_ENABLED and not _is_public(path) and not request.session.get("uid"):
         if path.startswith(("/api/", "/tiles/")):
             return JSONResponse({"error": "authentication required"}, status_code=401)
-        return RedirectResponse("/login")
+        from urllib.parse import quote
+        nxt = path + (("?" + request.url.query) if request.url.query else "")
+        return RedirectResponse("/login?next=" + quote(nxt, safe="") if nxt != "/" else "/login")
     response = await call_next(request)
     # App HTML/JS/CSS must always revalidate, so a self-update reaches browsers
     # immediately (StaticFiles' ETag then serves 304 when unchanged). Vendored
