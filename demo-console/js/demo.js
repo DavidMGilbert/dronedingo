@@ -106,6 +106,14 @@
   }
 
   /* ---- map ---- */
+  // Raster paint + background per theme, mirroring the appliance's mapstyle.py
+  // so CARTO's OSM tiles take on the DroneDingo warm/desaturated look.
+  const RASTER_TINT = {
+    dark:  { "raster-brightness-max": 0.82, "raster-saturation": -0.45, "raster-contrast": 0.12 },
+    light: { "raster-saturation": -0.15, "raster-contrast": 0.04 },
+  };
+  const THEME_BG = { dark: "#141109", light: "#F1ECE2" };
+
   const style = {
     version: 8,
     sources: { base: { type: "raster", tileSize: 256,
@@ -113,8 +121,10 @@
               "https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
               "https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
       attribution: '© OpenStreetMap contributors © CARTO' } },
-    layers: [{ id: "bg", type: "background", paint: { "background-color": "#0b1416" } },
-             { id: "base", type: "raster", source: "base" }],
+    layers: [{ id: "bg", type: "background", paint: { "background-color": "#141109" } },
+             // Same warm tint the appliance applies over the raster basemap
+             // (mapstyle.py) so the demo and the real console look identical.
+             { id: "base", type: "raster", source: "base", paint: RASTER_TINT.dark }],
   };
 
   let map, drones = [], home, markers = { drones: new Map(), ops: new Map(), home: null };
@@ -272,7 +282,11 @@
     const v = theme === "light" ? "light_all" : "dark_all";
     const src = map.getSource("base");
     if (src && src.setTiles) src.setTiles(["a", "b", "c"].map((s) => `https://${s}.basemaps.cartocdn.com/${v}/{z}/{x}/{y}.png`));
-    map.setPaintProperty("bg", "background-color", theme === "light" ? "#dfe8e2" : "#0b1416");
+    map.setPaintProperty("bg", "background-color", THEME_BG[theme] || THEME_BG.dark);
+    // Re-apply the appliance's per-theme tint over the raster layer.
+    const tint = RASTER_TINT[theme] || RASTER_TINT.dark;
+    for (const prop of ["raster-brightness-max", "raster-saturation", "raster-contrast"])
+      map.setPaintProperty("base", prop, tint[prop] === undefined ? (prop === "raster-brightness-max" ? 1 : 0) : tint[prop]);
   }
   function toggleTheme() {
     const next = (document.documentElement.getAttribute("data-theme") || "dark") === "dark" ? "light" : "dark";
