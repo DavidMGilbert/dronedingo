@@ -110,7 +110,13 @@
     home = { lat: hlat, lon: hlon };
 
     map = new maplibregl.Map({ container: "map", style, center: [hlon, hlat], zoom: 15.2, attributionControl: true });
+    // A map created before its container has a size renders blank; nudge it once
+    // the layout settles, and whenever the window changes.
+    map.on("error", (e) => console.warn("[demo] map:", e && e.error && e.error.message));
+    window.addEventListener("resize", () => map.resize());
+    [120, 500, 1500].forEach((ms) => setTimeout(() => map && map.resize(), ms));
     map.on("load", () => {
+      map.resize();
       map.addSource("rings", { type: "geojson", data: {
         type: "FeatureCollection", features: RINGS.map((r) => ({
           type: "Feature", geometry: { type: "Polygon", coordinates: [circle(hlat, hlon, r)] } })) } });
