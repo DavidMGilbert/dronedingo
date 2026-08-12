@@ -20,6 +20,10 @@
     + '<rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.5"/></svg>';
   const ICON_OP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.4"/>'
     + '<path d="M5 20c0-4 3.2-6.4 7-6.4s7 2.4 7 6.4z"/></svg>';
+  const UFO_SVG = '<svg viewBox="0 0 24 24" fill="currentColor">'
+    + '<ellipse cx="12" cy="12" rx="9" ry="3.4"/>'                          // saucer
+    + '<path d="M8.2 10.7a3.8 2.9 0 0 1 7.6 0z"/>'                          // dome
+    + '<circle cx="6.6" cy="16.8" r=".9"/><circle cx="12" cy="18.3" r=".9"/><circle cx="17.4" cy="16.8" r=".9"/></svg>'; // beam
 
   const MODELS = ["DJI Mavic 3", "DJI Air 3", "Autel EVO II", "DJI Mini 4 Pro", "DJI FPV"];
   const RINGS = [250, 500, 1000];
@@ -47,32 +51,54 @@
   const fmtDist = (m) => m >= 1000 ? (m / 1000).toFixed(2) + " km" : Math.round(m) + " m";
 
   /* ---- wandering drone ---- */
-  function makeDrone(id, model, home, maxR, baseSpeed) {
-    const a = rnd(0, 2 * Math.PI), r = rnd(0.2, 0.8) * maxR;
-    const [lat, lon] = offsetM(home.lat, home.lon, r * Math.cos(a), r * Math.sin(a));
+  // Survey-style waypoints so drones look like they're scanning a property.
+  function buildWaypoints(pattern, home, R) {
+    const pts = [], push = (n, e) => pts.push(offsetM(home.lat, home.lon, n, e));
+    if (pattern === "orbit" || pattern === "hover") {
+      const n = pattern === "hover" ? 5 : 12;
+      for (let i = 0; i < n; i++) { const a = i / n * 2 * Math.PI, rr = R * (pattern === "hover" ? rnd(0.25, 1) : rnd(0.85, 1.05)); push(rr * Math.cos(a), rr * Math.sin(a)); }
+    } else if (pattern === "perimeter") {
+      for (const [n, e] of [[R, R], [R, -R], [-R, -R], [-R, R]]) push(n * rnd(0.85, 1.05), e * rnd(0.85, 1.05));
+    } else { // lawnmower grid
+      const rows = 4; let dir = 1;
+      for (let i = 0; i <= rows; i++) { const n = -R + 2 * R * i / rows; push(n, dir * R); push(n, -dir * R); dir *= -1; }
+    }
+    return pts;
+  }
+
+  function makeDrone(id, model, home, maxR, baseSpeed, unidentified) {
+    const pattern = unidentified ? "hover" : ["perimeter", "grid", "orbit"][Math.floor(Math.random() * 3)];
+    const wps = buildWaypoints(pattern, home, maxR);
+    const [lat, lon] = wps[0];
     const oa = rnd(0, 2 * Math.PI), orr = rnd(0.4, 1.1) * maxR;
     const [oplat, oplon] = offsetM(home.lat, home.lon, orr * Math.cos(oa), orr * Math.sin(oa));
     return {
-      id, model, home, maxR, lat, lon, oplat, oplon,
-      heading: rnd(0, 360), speed: baseSpeed, curSpeed: baseSpeed, targetSpeed: baseSpeed,
+      id, model, home, maxR, lat, lon, oplat, oplon, pattern, wps, wpi: 1, hover: 0,
+      unidentified: !!unidentified, hasOp: !unidentified,
+      heading: rnd(0, 360), speed: baseSpeed, curSpeed: baseSpeed,
       alt: rnd(35, 95), targetAlt: rnd(35, 95), vspeed: 0,
-      rssiBase: rnd(-52, -38), positions: [], seen: Date.now(),
+      rssiBase: rnd(-52, -38), positions: [],
       step(dt) {
-        this.heading += rnd(-1, 1) * 28 * dt;                 // gentle wander
-        if (Math.random() < 0.02) this.heading += rnd(-1, 1) * 110;   // occasional turn
-        const dHome = haversine(this.lat, this.lon, this.home.lat, this.home.lon);
-        if (dHome > this.maxR) {                              // steer back over the property
-          const toHome = bearing(this.lat, this.lon, this.home.lat, this.home.lon);
-          this.heading = blendAngle(this.heading, toHome, clamp((dHome - this.maxR) / this.maxR, 0, 1) * 0.5 + 0.15);
+        const [tlat, tlon] = this.wps[this.wpi];
+        const dist = haversine(this.lat, this.lon, tlat, tlon);
+        if (this.hover > 0) {                                  // pause on station = "scanning"
+          this.hover -= dt;
+          this.curSpeed += (0 - this.curSpeed) * 0.15;
+          this.heading += rnd(-1, 1) * 18 * dt;                // slow rotate while scanning
+        } else if (dist < 18) {                                // reached a survey point
+          this.wpi = (this.wpi + 1) % this.wps.length;
+          if (this.wpi === 0) this.wps = buildWaypoints(this.pattern, this.home, this.maxR); // re-jitter each lap
+          if (Math.random() < 0.45) this.hover = rnd(1.5, 4);  // occasionally hold & scan
+        } else {                                               // fly toward the point (steer + jitter)
+          this.heading = blendAngle(this.heading, bearing(this.lat, this.lon, tlat, tlon), 0.16) + rnd(-1, 1) * 6;
+          this.curSpeed += (this.speed - this.curSpeed) * 0.06;
         }
         this.heading = ((this.heading % 360) + 360) % 360;
-        if (Math.random() < 0.012) { this.targetSpeed = this.speed * rnd(0.4, 1.4); this.targetAlt = rnd(25, 110); }
-        this.curSpeed += (this.targetSpeed - this.curSpeed) * 0.06;
+        if (Math.random() < 0.01) this.targetAlt = rnd(30, 105);
         this.vspeed = clamp((this.targetAlt - this.alt) * 0.2, -3, 3);
         this.alt += this.vspeed * dt;
-        const dist = this.curSpeed * dt;
-        [this.lat, this.lon] = offsetM(this.lat, this.lon,
-          dist * Math.cos(rad(this.heading)), dist * Math.sin(rad(this.heading)));
+        const span = Math.max(0, this.curSpeed) * dt;
+        [this.lat, this.lon] = offsetM(this.lat, this.lon, span * Math.cos(rad(this.heading)), span * Math.sin(rad(this.heading)));
         this.positions.push([this.lat, this.lon]);
         if (this.positions.length > 240) this.positions.shift();
       },
@@ -138,65 +164,89 @@
         const serial = (m.startsWith("DJI") ? "1581F5" : "SIM-AUT") + Math.random().toString(36).slice(2, 8).toUpperCase();
         drones.push(makeDrone(serial, m, home, rnd(450, 750), rnd(4, 12)));
       }
+      // One UNIDENTIFIED contact — no Remote ID, no telemetry. The differentiator.
+      // Kept near home (we can't know its real position) and loitering slowly.
+      drones.push(makeDrone("RF-UNRESOLVED-" + Math.random().toString(36).slice(2, 6).toUpperCase(),
+        "Unidentified drone", home, rnd(90, 170), rnd(3, 6), true));
       geoNote(located);
       setInterval(tick, 1000);
       tick();
     });
   }
 
+  function cardHTML({ d, range, brg, opRange, rssi }) {
+    if (d.unidentified) {
+      return `<div class="contact-card unidentified">
+        <span class="contact-head"><span class="drone-icon" style="color:var(--danger)">${UFO_SVG}</span>
+          <span class="contact-name"><strong>Unidentified drone<span class="unid-tag">No ID</span></strong><small>RF signature · identity not broadcast</small></span>
+          <span class="contact-distance" style="color:var(--danger)">~${fmtDist(range)}</span></span>
+        <span class="unid-note"><b>Not transmitting Remote ID.</b> Detected by its control-link signature — no serial, operator or precise telemetry. You still know a drone is out there.</span>
+      </div>`;
+    }
+    return `<div class="contact-card">
+      <span class="contact-head"><span class="drone-icon">${ICON_DRONE}</span>
+        <span class="contact-name"><strong>${d.model}</strong><small>RID/WiFi (sim) · ${d.id}</small></span>
+        <span class="contact-distance">${fmtDist(range)}</span></span>
+      <span class="telemetry">
+        <span><small>Range</small>${compass(brg)}</span>
+        <span><small>Height</small>${Math.round(d.alt)} m</span>
+        <span><small>Speed</small>${d.curSpeed.toFixed(1)} m/s</span>
+        <span><small>Heading</small>${Math.round(d.heading)}°</span>
+        <span><small>V-Speed</small>${d.vspeed.toFixed(1)} m/s</span>
+        <span><small>Signal</small>${rssi} dBm</span>
+      </span>
+      <span class="operator-line"><span class="operator-icon">${ICON_OP}</span>Operator estimated ${fmtDist(opRange)} from base</span>
+    </div>`;
+  }
+
   function tick() {
     for (const d of drones) d.step(1.0);
-    // tracks
-    map.getSource("tracks").setData({ type: "FeatureCollection", features: drones.map((d) => ({
+    // tracks — identified only (an unidentified contact's position is uncertain)
+    map.getSource("tracks").setData({ type: "FeatureCollection", features: drones.filter((d) => !d.unidentified).map((d) => ({
       type: "Feature", geometry: { type: "LineString", coordinates: d.positions.map(([la, lo]) => [lo, la]) } })) });
 
     const inner = RINGS[0];
-    let threat = null;
+    let threat = null, unid = 0;
     const rows = drones.map((d) => {
       const range = haversine(home.lat, home.lon, d.lat, d.lon);
       const brg = bearing(home.lat, home.lon, d.lat, d.lon);
-      const opRange = haversine(home.lat, home.lon, d.oplat, d.oplon);
+      const opRange = d.hasOp ? haversine(home.lat, home.lon, d.oplat, d.oplon) : null;
       const rssi = Math.round(d.rssiBase - 0.02 * range + rnd(-2, 2));
       const isThreat = range <= inner;
       if (isThreat && (!threat || range < threat.range)) threat = { d, range, brg };
-      // markers
-      let dm = markers.drones.get(d.id);
-      if (!dm) {
-        const node = el(ICON_DRONE, "drone-marker"); node.firstChild.classList.add("glyph");
-        dm = new maplibregl.Marker({ element: node }).setLngLat([d.lon, d.lat]).addTo(map);
-        markers.drones.set(d.id, dm);
-      } else dm.setLngLat([d.lon, d.lat]);
-      const node = dm.getElement();
-      node.classList.toggle("threat", isThreat);
-      const g = node.querySelector(".glyph"); if (g) g.style.transform = `rotate(${d.heading}deg)`;
-      let om = markers.ops.get(d.id);
-      if (!om) { om = new maplibregl.Marker({ element: el(ICON_OP, "op-marker") }).setLngLat([d.oplon, d.oplat]).addTo(map); markers.ops.set(d.id, om); }
-      return { d, range, brg, opRange, rssi };
-    }).sort((a, b) => a.range - b.range);
+      if (d.unidentified) unid++;
 
-    // contact cards
+      let dm = markers.drones.get(d.id);
+      if (d.unidentified) {
+        if (!dm) { dm = new maplibregl.Marker({ element: el(UFO_SVG, "unid-marker") }).setLngLat([d.lon, d.lat]).addTo(map); markers.drones.set(d.id, dm); }
+        else dm.setLngLat([d.lon, d.lat]);
+      } else {
+        if (!dm) {
+          const node = el(ICON_DRONE, "drone-marker"); node.firstChild.classList.add("glyph");
+          dm = new maplibregl.Marker({ element: node }).setLngLat([d.lon, d.lat]).addTo(map);
+          markers.drones.set(d.id, dm);
+        } else dm.setLngLat([d.lon, d.lat]);
+        const node = dm.getElement();
+        node.classList.toggle("threat", isThreat);
+        const g = node.querySelector(".glyph"); if (g) g.style.transform = `rotate(${d.heading}deg)`;
+      }
+      if (d.hasOp && !markers.ops.get(d.id)) {
+        markers.ops.set(d.id, new maplibregl.Marker({ element: el(ICON_OP, "op-marker") }).setLngLat([d.oplon, d.oplat]).addTo(map));
+      }
+      return { d, range, brg, opRange, rssi };
+    }).sort((a, b) => (b.d.unidentified - a.d.unidentified) || (a.range - b.range)); // unidentified pinned to top
+
     $("contact-count").textContent = drones.length;
     $("contacts-empty").style.display = drones.length ? "none" : "";
-    $("contact-list").innerHTML = rows.map(({ d, range, brg, opRange, rssi }) => `
-      <div class="contact-card">
-        <span class="contact-head"><span class="drone-icon">${ICON_DRONE}</span>
-          <span class="contact-name"><strong>${d.model}</strong><small>RID/WiFi (sim) · ${d.id}</small></span>
-          <span class="contact-distance">${fmtDist(range)}</span></span>
-        <span class="telemetry">
-          <span><small>Range</small>${compass(brg)}</span>
-          <span><small>Height</small>${Math.round(d.alt)} m</span>
-          <span><small>Speed</small>${d.curSpeed.toFixed(1)} m/s</span>
-          <span><small>Heading</small>${Math.round(d.heading)}°</span>
-          <span><small>V-Speed</small>${d.vspeed.toFixed(1)} m/s</span>
-          <span><small>Signal</small>${rssi} dBm</span>
-        </span>
-        <span class="operator-line"><span class="operator-icon">${ICON_OP}</span>Operator estimated ${fmtDist(opRange)} from base</span>
-      </div>`).join("");
+    $("contact-list").innerHTML = rows.map(cardHTML).join("");
 
-    // alert strip
+    const chip = $("rf-chip");
+    if (unid) { $("rf-chip-text").textContent = `${unid} unidentified drone${unid > 1 ? "s" : ""} — no Remote ID`; chip.hidden = false; }
+    else chip.hidden = true;
+
     const strip = $("alert-strip");
     if (threat) {
-      $("alert-text").innerHTML = `<strong>${threat.d.model}</strong> within ${fmtDist(threat.range)} of the property — bearing ${compass(threat.brg)}`;
+      $("alert-text").innerHTML = `<strong>${threat.d.unidentified ? "Unidentified drone" : threat.d.model}</strong> within ${fmtDist(threat.range)} of the property — bearing ${compass(threat.brg)}`;
       strip.hidden = false;
     } else strip.hidden = true;
   }
@@ -215,6 +265,71 @@
     $("current-date").textContent = d.toLocaleDateString("en-AU", { weekday: "short", day: "2-digit", month: "short", year: "numeric" });
   }
   tickClock(); setInterval(tickClock, 1000);
+
+  /* ---- console chrome: theme, sighting log, settings, CTA ---- */
+  function swapTiles(theme) {
+    if (!map || !map.getSource) return;
+    const v = theme === "light" ? "light_all" : "dark_all";
+    const src = map.getSource("base");
+    if (src && src.setTiles) src.setTiles(["a", "b", "c"].map((s) => `https://${s}.basemaps.cartocdn.com/${v}/{z}/{x}/{y}.png`));
+    map.setPaintProperty("bg", "background-color", theme === "light" ? "#dfe8e2" : "#0b1416");
+  }
+  function toggleTheme() {
+    const next = (document.documentElement.getAttribute("data-theme") || "dark") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    $("btn-theme").textContent = next === "dark" ? "☀" : "☾";
+    swapTiles(next);
+  }
+
+  const layer = () => $("modal-layer");
+  function openModal(id) { layer().hidden = false; document.querySelectorAll("#modal-layer .modal").forEach((m) => m.hidden = m.id !== id); }
+  function closeModals() { layer().hidden = true; document.querySelectorAll("#modal-layer .modal").forEach((m) => m.hidden = true); }
+
+  const SIGHTINGS = [
+    { name: "DJI Mavic 3", serial: "1581F5FKD2440100", first: "Today 19:38", dur: "01:03:52", range: "498 m", hits: "3,593" },
+    { name: "Autel EVO II", serial: "SIM-AUTEL-EVO-0079", first: "Today 18:12", dur: "00:41:09", range: "210 m", hits: "2,140" },
+    { name: "Unidentified drone", serial: "RF-UNRESOLVED-0031", first: "Today 14:05", dur: "00:06:44", range: "~180 m", hits: "392", unid: true },
+    { name: "DJI Mini 4 Pro", serial: "SIM-DJI-M4P-1042", first: "Yesterday 16:21", dur: "00:08:14", range: "1.2 km", hits: "492" },
+    { name: "Unidentified drone", serial: "RF-UNRESOLVED-0027", first: "8 Aug 18:03", dur: "00:03:18", range: "~934 m", hits: "198", unid: true },
+    { name: "DJI Air 3", serial: "SIM-DJI-AIR3-5521", first: "6 Aug 14:12", dur: "00:11:09", range: "742 m", hits: "669" },
+  ];
+  function renderSightings() {
+    $("sighting-rows").innerHTML = SIGHTINGS.map((s) =>
+      `<tr${s.unid ? ' style="color:var(--danger)"' : ""}>`
+      + `<td><strong>${s.unid ? "🛸 " : ""}${s.name}</strong><br><small>${s.serial}${s.unid ? " · no Remote ID" : ""}</small></td>`
+      + `<td>${s.first}</td><td>${s.dur}</td><td>${s.range}</td><td>${s.hits}</td></tr>`).join("");
+  }
+
+  const SETTINGS = {
+    Location: "Set the receiver location — range and bearing to every contact are measured from here.",
+    Alerts: "Register phones for end-to-end encrypted push alerts, straight from the appliance. No third-party app, no Apple/Google account.",
+    System: "Live appliance health — CPU, memory, temperature and Pi throttle status at a glance.",
+    Network: "Configure Wi-Fi and ethernet directly from the dashboard.",
+    Updates: "One-click DroneDingo software and firmware updates.",
+    Account: "Manage the admin login and registered devices.",
+    About: "Version, build and node information.",
+  };
+  function paneHTML(k) {
+    return `<h3>${k}</h3><p>${SETTINGS[k]}</p><p style="margin-top:14px">`
+      + `<a href="https://dronedingo.com.au/the-system" target="_blank" rel="noopener" style="color:var(--orange);font-weight:600">See the full system →</a></p>`;
+  }
+  function buildSettings() {
+    const nav = $("settings-nav"), content = $("settings-content"); nav.innerHTML = "";
+    Object.keys(SETTINGS).forEach((k, i) => {
+      const b = document.createElement("button"); b.textContent = k; b.className = i === 0 ? "active" : "";
+      b.onclick = () => { nav.querySelectorAll("button").forEach((x) => x.classList.toggle("active", x === b)); content.innerHTML = paneHTML(k); };
+      nav.append(b);
+    });
+    content.innerHTML = paneHTML("Location");
+  }
+
+  document.querySelectorAll(".close-modal").forEach((b) => b.addEventListener("click", closeModals));
+  layer().addEventListener("click", (e) => { if (e.target === layer()) closeModals(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModals(); });
+  $("btn-theme").onclick = toggleTheme;
+  $("btn-log").onclick = () => { renderSightings(); openModal("sightings-modal"); };
+  $("btn-settings").onclick = () => { buildSettings(); openModal("settings-modal"); };
+  $("cta-close").onclick = () => { $("cta-banner").hidden = true; };
 
   // A few plausible rural fallbacks if geolocation is blocked.
   const FALLBACKS = [

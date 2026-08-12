@@ -29,6 +29,18 @@
     .map-panel .maplibregl-ctrl-attrib { display: block !important;
       background: rgba(0,0,0,.45); border-radius: 8px 0 0 0; }
     .map-panel .maplibregl-ctrl-attrib, .map-panel .maplibregl-ctrl-attrib a { color: var(--muted); }
+    .lg-unid { color: var(--danger); }
+    /* Bottom-of-map call to action */
+    .cta-banner { position: absolute; z-index: 7; left: 50%; bottom: 16px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 14px; max-width: min(92%, 620px);
+      padding: 11px 14px 11px 18px; border-radius: 14px; }
+    .cta-banner .cta-msg { font-size: 13px; color: var(--text); }
+    .cta-banner .cta-btn { flex: none; padding: 9px 15px; border-radius: 10px; background: var(--orange);
+      color: #14100a; font: 600 13px "Barlow", sans-serif; text-decoration: none; white-space: nowrap; }
+    .cta-banner .cta-close { flex: none; width: 26px; height: 26px; border: 0; border-radius: 8px;
+      background: transparent; color: var(--muted); font-size: 18px; cursor: pointer; }
+    .cta-banner[hidden] { display: none; }
+    @media (max-width: 560px) { .cta-banner .cta-msg { display: none; } .cta-banner { bottom: 10px; padding: 9px 10px; } }
   </style>
 </head>
 <body>
@@ -45,7 +57,9 @@
       <span class="vfd-clock"><time id="clock">--:--:--</time><time id="current-date">—</time></span>
     </div>
     <nav class="top-actions">
-      <a class="demo-cta" href="https://dronedingo.com.au">Learn more →</a>
+      <button class="icon-button" id="btn-log" title="Sighting log" aria-label="Sighting log">↻</button>
+      <button class="icon-button" id="btn-theme" title="Light / dark" aria-label="Toggle theme">☀</button>
+      <button class="icon-button" id="btn-settings" title="Settings" aria-label="Settings">⚙</button>
     </nav>
   </header>
 
@@ -66,6 +80,13 @@
         <span><i class="legend-drone"></i>Drone</span>
         <span><i class="legend-operator"></i>Operator</span>
         <span><i class="legend-home"></i>Home base</span>
+        <span class="lg-unid">🛸 Unidentified</span>
+      </div>
+      <div class="rf-chip" id="rf-chip" hidden>🛸 <span id="rf-chip-text"></span></div>
+      <div class="cta-banner glass" id="cta-banner">
+        <span class="cta-msg">Protect your property from drone-borne theft &amp; surveillance.</span>
+        <a class="cta-btn" href="https://dronedingo.com.au/the-system" target="_blank" rel="noopener">See how the system works →</a>
+        <button class="cta-close" id="cta-close" aria-label="Dismiss">×</button>
       </div>
     </main>
   </div>
@@ -75,6 +96,21 @@
     <button disabled title="Available in the full appliance">REVIEW</button>
   </footer>
 </div>
+
+  <div class="modal-layer" id="modal-layer" hidden>
+    <section class="modal glass" id="sightings-modal" hidden>
+      <header class="modal-header"><div><h2>Sighting log</h2><p>Recorded drone broadcasts and detections (simulated)</p></div>
+        <button class="icon-button close-modal" aria-label="Close">×</button></header>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Aircraft</th><th>First seen</th><th>Duration</th><th>Max range</th><th>Hits</th></tr></thead>
+        <tbody id="sighting-rows"></tbody></table></div>
+    </section>
+    <section class="modal glass" id="settings-modal" hidden>
+      <header class="modal-header"><h2>Settings</h2><button class="icon-button close-modal" aria-label="Close">×</button></header>
+      <div class="settings-layout"><nav class="settings-nav" id="settings-nav"></nav><div class="settings-content" id="settings-content"></div></div>
+      <p class="simulation-note">This is a live demo. On a DroneDingo appliance these panels configure the receiver, phone alerts, network, updates and more.</p>
+    </section>
+  </div>
 
 <script src="vendor/maplibre/maplibre-gl.js"></script>
 <script src="js/demo.js"></script>

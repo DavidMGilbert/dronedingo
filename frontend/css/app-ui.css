@@ -38,6 +38,46 @@
 /* Home dot in the legend matches the map's home marker. */
 .legend-home { width: 9px; height: 9px; border-radius: 50%; background: var(--home, #4E6BE6); }
 
+/* ---- Unidentified contact (RF presence, no Remote ID / telemetry) ----
+   Attention-grabbing pulse; shared by the appliance and the demo. */
+@keyframes dd-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 0%, transparent); }
+  50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 30%, transparent),
+                    0 0 22px color-mix(in srgb, var(--danger) 30%, transparent); }
+}
+.contact-card.unidentified, .contact.unidentified {
+  border-color: var(--danger) !important;
+  animation: dd-pulse 1.8s ease-in-out infinite;
+}
+.unid-tag {
+  display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px;
+  font: 700 10px/1.4 "Barlow Condensed", sans-serif; letter-spacing: .08em;
+  text-transform: uppercase; color: #fff; background: var(--danger);
+}
+.unid-note { color: var(--muted); font-size: 12px; line-height: 1.5; margin-top: 12px; }
+.unid-note b { color: var(--danger); }
+
+/* Map marker for an unidentified contact — pulsing "?" with a dashed edge. */
+@keyframes dd-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--danger) 55%, transparent); }
+                     100% { box-shadow: 0 0 0 16px color-mix(in srgb, var(--danger) 0%, transparent); } }
+.unid-marker {
+  width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--danger); color: #fff; font: 800 16px "Barlow", sans-serif;
+  border: 2px dashed rgba(255, 255, 255, .8); cursor: pointer;
+  animation: dd-ring 1.5s ease-out infinite;
+}
+
+/* Pulsing map chip shown while any unidentified contact is active (appliance
+   list-only case, and the demo). */
+.rf-chip {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7;
+  display: flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 999px;
+  background: color-mix(in srgb, var(--danger) 90%, #000); color: #fff;
+  font: 600 12px "Barlow", sans-serif; box-shadow: 0 8px 22px var(--shadow);
+  animation: dd-pulse 1.6s ease-in-out infinite;
+}
+.rf-chip[hidden] { display: none; }
+
 /* ---- MapLibre markers restyled to the concept's target look ---- */
 .drone-marker {
   width: 30px; height: 30px; border-radius: 50%; cursor: pointer;
