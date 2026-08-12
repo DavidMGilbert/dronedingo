@@ -206,28 +206,50 @@ def _send_one(sub: dict, payload: bytes, ttl: int = 120) -> int:
 
 
 def notify(title: str, body: str, data: dict | None = None) -> dict:
-    """Send a notification to every registered device. Prunes dead endpoints."""
+    """Send a notification to every registered device. Prunes dead endpoints
+    and reports a specific reason when a send fails, so failures are diagnosable
+    rather than silently reported as 'no devices'."""
     payload = json.dumps({"title": title, "body": body, "data": data or {}}).encode()
     push = ensure_keys()
     subs = list(push.get("subscriptions", []))
     if not subs:
-        return {"ok": False, "sent": 0, "message": "No devices registered."}
-    sent, dead = 0, []
+        return {"ok": False, "sent": 0, "devices": 0,
+                "message": "No devices registered yet."}
+
+    sent, dead, errors = 0, [], []
     for sub in subs:
         try:
             status = _send_one(sub, payload)
             if 200 <= status < 300:
                 sent += 1
+            else:
+                errors.append(f"HTTP {status}")
         except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read().decode("utf-8", "replace")[:160]
+            except Exception:
+                pass
+            errors.append(f"HTTP {exc.code} {exc.reason} {detail}".strip())
             if exc.code in (404, 410):      # subscription gone
                 dead.append(sub["endpoint"])
-            else:
-                log.warning("push send failed (%s): %s", exc.code, sub["endpoint"][:60])
+            log.warning("push send failed (%s %s) to %s: %s",
+                        exc.code, exc.reason, sub["endpoint"][:48], detail)
         except Exception as exc:
-            log.warning("push send error: %s", exc)
+            errors.append(str(exc))
+            log.warning("push send error to %s: %s", sub["endpoint"][:48], exc)
     for ep in dead:
         remove_subscription(ep)
-    return {"ok": sent > 0, "sent": sent, "pruned": len(dead), "devices": len(subs)}
+
+    if sent:
+        msg = f"Sent to {sent} device(s)."
+        if dead:
+            msg += f" Removed {len(dead)} expired."
+        return {"ok": True, "sent": sent, "pruned": len(dead), "devices": len(subs), "message": msg}
+    msg = "Push send failed: " + ("; ".join(dict.fromkeys(errors))[:220] if errors else "unknown error")
+    if dead:
+        msg += f" ({len(dead)} expired subscription(s) removed — re-register the phone)"
+    return {"ok": False, "sent": 0, "pruned": len(dead), "devices": len(subs), "message": msg}
 
 
 def enabled() -> bool:
