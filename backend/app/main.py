@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from . import net          # noqa: F401 — pins the certifi CA bundle for HTTPS
 from . import config as cfg
 from . import auth, system, updater, push
 from .db import DB

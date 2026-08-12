@@ -35,6 +35,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+from . import net          # noqa: F401 — pins the certifi CA bundle for HTTPS
 from . import config as cfg
 
 log = logging.getLogger("dronedingo")

@@ -7,6 +7,7 @@ pyyaml>=6.0
 aiosqlite>=0.20
 itsdangerous>=2.1        # signs the session cookie (Starlette SessionMiddleware)
 cryptography>=41         # verifies Ed25519 signatures on website releases
+certifi>=2023.7          # CA bundle for outbound HTTPS (push/relay/ntfy/updates)
 
 # System package (installed via apt, not pip, and never redistributed by us):
 #   librtlsdr0   — provides the librtlsdr.so our ctypes binding loads
