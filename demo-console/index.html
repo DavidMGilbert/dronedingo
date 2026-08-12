@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en-AU" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>DroneDingo — Live Demo</title>
+  <meta name="description" content="DroneDingo passive drone detection console — live interactive demo." />
+  <link rel="icon" type="image/png" href="vendor/brand/favicon-64.png" />
+  <meta name="theme-color" content="#0c2224" />
+  <link rel="stylesheet" href="css/fonts.css" />
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css" />
+  <link rel="stylesheet" href="css/theme.css" />
+  <link rel="stylesheet" href="css/clock.css" />
+  <link rel="stylesheet" href="css/viewport.css" />
+  <link rel="stylesheet" href="css/contrast.css" />
+  <link rel="stylesheet" href="css/app-ui.css" />
+  <style>
+    /* Demo-only chrome */
+    .demo-badge { font: 600 10px/1 "Barlow Condensed", sans-serif; letter-spacing: .12em;
+      text-transform: uppercase; color: #14100a; background: var(--vfd);
+      padding: 4px 8px; border-radius: 999px; }
+    .demo-cta { margin-left: 8px; color: var(--orange); text-decoration: none; font-weight: 600; font-size: 13px; }
+    #geo-note { position: absolute; left: 12px; top: 12px; z-index: 6; max-width: 260px;
+      background: color-mix(in srgb, var(--surface-solid) 88%, transparent);
+      border: 1px solid var(--glass-line); border-radius: 12px; padding: 9px 12px;
+      font-size: 12px; color: var(--muted); box-shadow: 0 10px 24px var(--shadow); }
+    #geo-note b { color: var(--text); }
+    /* Show basemap attribution (required by CARTO/OSM) — app-ui.css hides it. */
+    .map-panel .maplibregl-ctrl-attrib { display: block !important;
+      background: rgba(0,0,0,.45); border-radius: 8px 0 0 0; }
+    .map-panel .maplibregl-ctrl-attrib, .map-panel .maplibregl-ctrl-attrib a { color: var(--muted); }
+  </style>
+</head>
+<body>
+<div class="app-shell">
+  <header class="topbar glass">
+    <a class="brand" href="https://dronedingo.com.au" aria-label="DroneDingo">
+      <img class="brand-mark" src="vendor/brand/mark-dark.png" alt="" />
+      <span><strong>Drone<span>Dingo</span></strong><small>Your watchdog for the sky</small></span>
+    </a>
+    <div class="system-summary">
+      <span><i class="live-dot"></i><b>LIVE</b></span>
+      <span><b id="contact-count">0</b> CONTACTS</span>
+      <span class="demo-badge">Demo</span>
+      <span class="vfd-clock"><time id="clock">--:--:--</time><time id="current-date">—</time></span>
+    </div>
+    <nav class="top-actions">
+      <a class="demo-cta" href="https://dronedingo.com.au">Learn more →</a>
+    </nav>
+  </header>
+
+  <div class="alert-strip" id="alert-strip" hidden>
+    <span class="alert-icon">▲</span><span id="alert-text"></span><time>NOW</time>
+  </div>
+
+  <div class="workspace">
+    <aside class="contacts-panel glass">
+      <div class="panel-heading"><strong>Active contacts</strong><span>Simulated</span></div>
+      <div id="contact-list"></div>
+      <div id="contacts-empty" style="padding:10px 4px;color:var(--muted);font-size:13px">Scanning…</div>
+    </aside>
+    <main class="map-panel">
+      <div id="map"></div>
+      <div id="geo-note">Locating you to place a nearby demo property… <b>allow location</b> for the full effect.</div>
+      <div class="map-legend glass">
+        <span><i class="legend-drone"></i>Drone</span>
+        <span><i class="legend-operator"></i>Operator</span>
+        <span><i class="legend-home"></i>Home base</span>
+      </div>
+    </main>
+  </div>
+
+  <footer class="modebar glass">
+    <button class="active">LIVE</button>
+    <button disabled title="Available in the full appliance">REVIEW</button>
+  </footer>
+</div>
+
+<script src="vendor/maplibre/maplibre-gl.js"></script>
+<script src="js/demo.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+/* DroneDingo demo — vendored fonts (relative paths for a static host). */
+@font-face { font-family:"Barlow"; font-weight:400; font-display:swap; src:url("../vendor/fonts/barlow-400.woff2") format("woff2"); }
+@font-face { font-family:"Barlow"; font-weight:500; font-display:swap; src:url("../vendor/fonts/barlow-500.woff2") format("woff2"); }
+@font-face { font-family:"Barlow"; font-weight:600; font-display:swap; src:url("../vendor/fonts/barlow-600.woff2") format("woff2"); }
+@font-face { font-family:"Barlow Condensed"; font-weight:600; font-display:swap; src:url("../vendor/fonts/barlowcondensed-600.woff2") format("woff2"); }
+@font-face { font-family:"Barlow Condensed"; font-weight:700; font-display:swap; src:url("../vendor/fonts/barlowcondensed-700.woff2") format("woff2"); }
+@font-face { font-family:"Barlow Condensed"; font-weight:800; font-display:swap; src:url("../vendor/fonts/barlowcondensed-800.woff2") format("woff2"); }
+@font-face { font-family:"Share Tech Mono"; font-weight:400; font-display:swap; src:url("../vendor/fonts/sharetechmono-400.woff2") format("woff2"); }
