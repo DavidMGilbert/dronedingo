@@ -95,6 +95,9 @@ push:
   # The VAPID key pair is generated on first run and kept in data/state.json.
   enabled: true
   subject: "mailto:admin@dronedingo.com.au"   # VAPID contact (per RFC 8292)
+  # Tapping an alert opens this dashboard URL (deep-linked to the operator's
+  # location + aircraft). Set it to the dashboard's public https address.
+  portal_url: null                            # e.g. "https://dronedingo.davidmgilbert.com"
   # Base URL a phone uses to open the registration PWA. Web Push REQUIRES HTTPS,
   # so this must be an https:// origin the phone trusts (the appliance's own
   # https address, or your hosted alerts site). If null, the QR uses whatever

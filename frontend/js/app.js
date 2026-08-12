@@ -53,6 +53,7 @@
     });
     DDMap.setHome(state.home.lat, state.home.lon, state.home.label, state.cfg.map.range_rings_m || []);
     showBasemapInfo();
+    handleAlertDeepLink();
 
     buildSettingsNav();
     wireUI();
@@ -60,6 +61,28 @@
     tickClock(); setInterval(tickClock, 1000);
     setInterval(pruneContacts, 3000);
     loadEvents();
+  }
+
+  // Opened from a push alert: ?op=lat,lon&drone=id → centre on the operator and
+  // open the aircraft detail once it appears.
+  function handleAlertDeepLink() {
+    const q = new URLSearchParams(location.search);
+    const op = q.get("op");
+    if (op) {
+      const [la, lo] = op.split(",").map(Number);
+      if (!Number.isNaN(la) && !Number.isNaN(lo)) {
+        DDMap.upsertOperator("_alert", la, lo);
+        DDMap.panTo(la, lo);
+      }
+    }
+    const drone = q.get("drone");
+    if (drone) {
+      let tries = 0;
+      const iv = setInterval(() => {
+        if (state.contacts.has(drone)) { openDetail(drone); clearInterval(iv); }
+        else if (++tries > 12) clearInterval(iv);
+      }, 800);
+    }
   }
 
   function applyBrand(brand) {

@@ -206,11 +206,30 @@ def _send_one(sub: dict, payload: bytes, ttl: int = 120) -> int:
         return resp.status
 
 
+def _portal_link(data: dict) -> str | None:
+    """Deep link into the DroneDingo dashboard for this alert."""
+    base = (cfg.load().get("push") or {}).get("portal_url")
+    if not base:
+        return None
+    base = base.rstrip("/")
+    params = {}
+    if data.get("operator_lat") is not None and data.get("operator_lon") is not None:
+        params["op"] = f"{data['operator_lat']},{data['operator_lon']}"
+    if data.get("drone"):
+        params["drone"] = data["drone"]
+    from urllib.parse import urlencode
+    return f"{base}/?{urlencode(params)}" if params else f"{base}/"
+
+
 def notify(title: str, body: str, data: dict | None = None) -> dict:
     """Send a notification to every registered device. Prunes dead endpoints
     and reports a specific reason when a send fails, so failures are diagnosable
     rather than silently reported as 'no devices'."""
-    payload = json.dumps({"title": title, "body": body, "data": data or {}}).encode()
+    data = dict(data or {})
+    link = _portal_link(data)
+    if link:
+        data["url"] = link                    # SW opens this on tap
+    payload = json.dumps({"title": title, "body": body, "data": data}).encode()
     push = ensure_keys()
     subs = list(push.get("subscriptions", []))
     if not subs:

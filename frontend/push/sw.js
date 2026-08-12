@@ -21,10 +21,9 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const d = event.notification.data || {};
-  let url = "/";
-  if (d.operator_lat != null && d.operator_lon != null) {
-    url = `https://www.openstreetmap.org/?mlat=${d.operator_lat}&mlon=${d.operator_lon}` +
-          `#map=17/${d.operator_lat}/${d.operator_lon}`;
-  }
-  event.waitUntil(clients.openWindow(url));
+  const url = d.url || "/";
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+    for (const w of wins) { if (w.url.startsWith(url.split("?")[0]) && "focus" in w) return w.focus(); }
+    return clients.openWindow(url);
+  }));
 });

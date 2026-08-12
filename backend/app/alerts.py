@@ -119,7 +119,8 @@ class Alerter:
                 push.notify(title, body, {
                     "range_m": det.get("range_m"), "compass": det.get("compass"),
                     "operator_lat": det.get("operator_lat"),
-                    "operator_lon": det.get("operator_lon")})
+                    "operator_lon": det.get("operator_lon"),
+                    "drone": det.get("drone_id")})
         except Exception as exc:
             log.warning("DroneDingo Push delivery failed: %s", exc)
         if self.topic:
