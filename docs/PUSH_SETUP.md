@@ -60,8 +60,10 @@ registration page will say so. Options:
    The appliance still *sends* the push directly; the cloud only serves the
    static registration page over trusted HTTPS. Detection data never touches it.
 
-Until an HTTPS origin is configured, use the **ntfy** channel (Settings →
-Alerts → ntfy) as the interim — it needs no HTTPS on the appliance.
+Until an HTTPS origin is configured, phone registration needs a trusted HTTPS
+page: point `push.relay_url` at the notify.dronedingo.com.au relay (the appliance
+polls it for parked subscriptions), or set `alerts.webhook_url` for an interim
+integration that needs no HTTPS on the appliance.
 
 ## How it works (for the record)
 

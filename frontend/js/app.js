@@ -16,6 +16,13 @@
     + '<rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.5"/></svg>';
   const ICON_OP = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.4"/>'
     + '<path d="M5 20c0-4 3.2-6.4 7-6.4s7 2.4 7 6.4z"/></svg>';
+  // Unidentified, no-telemetry contact (e.g. RF presence with no Remote ID).
+  const ICON_UFO = '<svg viewBox="0 0 24 24" fill="currentColor">'
+    + '<ellipse cx="12" cy="12" rx="9" ry="3.4"/>'
+    + '<path d="M8.2 10.7a3.8 2.9 0 0 1 7.6 0z"/>'
+    + '<circle cx="6.6" cy="16.8" r=".9"/><circle cx="12" cy="18.3" r=".9"/><circle cx="17.4" cy="16.8" r=".9"/></svg>';
+  // A contact with no position fix (RF presence only) is "unidentified".
+  const isUnid = (d) => d && d.drone_lat == null;
 
   const state = {
     cfg: null, home: null, node: "—",
@@ -154,6 +161,16 @@
         `${d.model || "Drone"} • ${fmtDist(d.range_m)}`, () => openDetail(d.drone_id));
       DDMap.setTrack(d.drone_id, c.positions);
       if (d.operator_lat != null) DDMap.upsertOperator(d.drone_id, d.operator_lat, d.operator_lon);
+    } else if (state.home) {
+      // No position fix: we know a drone is out there but not where. Pin a
+      // pulsing UFO near Home Base with a small, stable per-contact offset.
+      if (!c.unidPos) {
+        const ang = Math.random() * Math.PI * 2, r = 0.0012 + Math.random() * 0.0016;
+        c.unidPos = [state.home.lat + Math.sin(ang) * r,
+                     state.home.lon + Math.cos(ang) * r / Math.cos(state.home.lat * Math.PI / 180)];
+      }
+      DDMap.upsertUnidentified(d.drone_id, c.unidPos[0], c.unidPos[1],
+        "Unidentified contact — no telemetry", () => openDetail(d.drone_id));
     }
     renderContacts();
     refreshAlertStrip();
@@ -168,8 +185,13 @@
   }
 
   function sortedContacts() {
-    return [...state.contacts.entries()]
-      .sort((a, b) => (a[1].last.range_m ?? 9e9) - (b[1].last.range_m ?? 9e9));
+    // Unidentified (no-telemetry) contacts float to the top — they demand a
+    // look precisely because we can't say what or where they are.
+    return [...state.contacts.entries()].sort((a, b) => {
+      const ua = isUnid(a[1].last), ub = isUnid(b[1].last);
+      if (ua !== ub) return ua ? -1 : 1;
+      return (a[1].last.range_m ?? 9e9) - (b[1].last.range_m ?? 9e9);
+    });
   }
 
   function renderContacts() {
@@ -178,11 +200,29 @@
     $("contacts-empty").style.display = arr.length ? "none" : "";
     list.innerHTML = "";
     for (const [id, c] of arr) list.appendChild(contactCard(id, c.last));
+    const unid = arr.filter(([, c]) => isUnid(c.last)).length;
+    const chip = $("rf-chip");
+    if (chip) {
+      if (unid) { $("rf-chip-text").textContent = `${unid} unidentified drone${unid > 1 ? "s" : ""} — no Remote ID`; chip.hidden = false; }
+      else chip.hidden = true;
+    }
   }
 
   function contactCard(id, d) {
     const el = document.createElement("button");
     el.className = "contact-card"; el.dataset.id = id;
+    if (isUnid(d)) {
+      el.className = "contact-card unidentified";
+      const sig = d.rssi != null ? Math.round(d.rssi) + " dBm" : "signal";
+      el.innerHTML =
+        `<span class="contact-head"><span class="drone-icon" style="color:var(--danger)">${ICON_UFO}</span>`
+        + `<span class="contact-name"><strong>Unidentified drone<span class="unid-tag">No ID</span></strong>`
+        + `<small>${esc(d.source || "RF signature")} · identity not broadcast</small></span>`
+        + `<span class="rf-chip">${esc(sig)}</span></span>`
+        + `<span class="unid-note"><b>Not transmitting Remote ID.</b> Detected by its control-link signature — no serial, operator or precise telemetry. You still know a drone is out there.</span>`;
+      el.addEventListener("click", () => openDetail(id));
+      return el;
+    }
     const opTxt = d.operator_lat != null ? `Operator estimated ${fmtDist(opDist(d))} from base` : "Operator not broadcast";
     el.innerHTML =
       `<span class="contact-head"><span class="drone-icon">${ICON_DRONE}</span>`
@@ -335,8 +375,9 @@
 
   async function renderAlerts(c) {
     c.innerHTML = `<p>Phone alerts fire when a drone comes within the alert range of Home Base.</p>
-      <h3>DroneDingo Push <span style="color:var(--vfd);font-size:12px">recommended</span></h3>
+      <h3>DroneDingo Push</h3>
       <p style="color:var(--muted);font-size:13px">Proprietary, end-to-end encrypted alerts sent straight from this appliance — no third-party app, no Apple/Google account. <b id="push-count" style="color:var(--text)"></b></p>
+      <div id="push-devices" style="margin:8px 0"></div>
       <div id="push-qr-wrap" hidden style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:10px 0">
         <div id="push-qr" style="width:150px;height:150px;background:#fff;border-radius:12px;padding:8px"></div>
         <div style="min-width:180px;color:var(--muted);font-size:13px">On the phone: scan with the camera, open the link, tap <b>Enable alerts</b>. Link valid ~15 min.<br><span id="push-url" style="color:var(--text);word-break:break-all;font-size:11px"></span></div>
@@ -344,50 +385,45 @@
       <div class="form-actions"><button id="push-add">Add a phone</button><button id="push-test">Send test push</button></div>
       <p id="push-note" class="status-note"></p>
       <hr style="border:0;border-top:1px solid var(--line);margin:22px 0 16px">
-      <h3>ntfy <span style="color:var(--muted);font-size:12px">alternative</span></h3>
-      <p style="color:var(--muted);font-size:13px">Uses the ntfy app + a broker (public ntfy.sh or your own). Scan the QR in the ntfy app.</p>
-      <div id="alert-qr-wrap" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-        <div id="alert-qr" style="width:132px;height:132px;background:#fff;border-radius:12px;padding:8px"></div>
-        <div style="min-width:180px;color:var(--muted);font-size:13px">Scan to subscribe a device to this appliance's alert channel. <br><b id="alert-topic-txt" style="color:var(--text)"></b></div>
-      </div>`
-      + field("ntfy topic", "al-topic", "", "text", "dronedingo-yourfarm-xxxx")
-      + field("ntfy server", "al-server", "", "text", "https://ntfy.sh")
-      + field("Webhook URL (optional)", "al-webhook", "", "text", "https://…")
+      <h3>Alert behaviour</h3>`
       + `<div class="form-grid">${field("Alert range (m)", "al-ring", "", "number")}${field("Re-alert after (s)", "al-resight", "", "number")}</div>`
       + `<div class="form-grid">${field("Quiet hours", "al-quiet", "", "text", "22:00-06:00")}<label class="check-field"><input type="checkbox" id="al-suppress"> Silence during quiet hours</label></div>`
-      + `<div class="form-actions"><button id="al-test">Send test</button><button class="primary" id="al-save">Save alerts</button></div><p id="al-note" class="status-note"></p>`;
+      + field("Webhook URL (optional)", "al-webhook", "", "text", "https://…")
+      + `<div class="form-actions"><button class="primary" id="al-save">Save</button></div><p id="al-note" class="status-note"></p>`;
     try {
       const a = await (await fetch("/api/alerts/config")).json();
-      $("al-topic").value = a.ntfy_topic || ""; $("al-server").value = a.ntfy_server || "https://ntfy.sh";
       $("al-webhook").value = a.webhook_url || ""; $("al-ring").value = a.alert_ring_m ?? "";
       $("al-resight").value = a.resight_after_s ?? ""; $("al-quiet").value = a.quiet_hours || "";
       $("al-suppress").checked = !!a.quiet_hours_suppress;
-      drawAlertQR();
-      $("al-topic").addEventListener("input", drawAlertQR);
-      $("al-server").addEventListener("input", drawAlertQR);
     } catch (_) {}
     $("al-save").onclick = async () => {
       await fetch("/api/alerts/config", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ntfy_topic: $("al-topic").value.trim(), ntfy_server: $("al-server").value.trim(),
           webhook_url: $("al-webhook").value.trim(), alert_ring_m: $("al-ring").value,
           resight_after_s: $("al-resight").value, quiet_hours: $("al-quiet").value.trim(),
           quiet_hours_suppress: $("al-suppress").checked }) });
       setNote("al-note", "Saved.", true);
     };
-    $("al-test").onclick = async () => {
-      setNote("al-note", "Sending…", true);
-      const r = await (await fetch("/api/alerts/test", { method: "POST" })).json();
-      setNote("al-note", r.ok ? "Test sent — check your phone." : ("Failed: " + r.error), r.ok);
-    };
 
-    // --- DroneDingo Push ---
+    // --- DroneDingo Push (registered devices + de-register) ---
     let pushStatus = { devices: 0, public_url: null };
-    try {
-      pushStatus = await (await fetch("/api/push/status")).json();
-      $("push-count").textContent = pushStatus.devices
-        ? `${pushStatus.devices} device(s) registered.` : "No devices registered yet.";
-    } catch (_) {}
+    async function loadDevices() {
+      try {
+        pushStatus = await (await fetch("/api/push/status")).json();
+        $("push-count").textContent = pushStatus.devices
+          ? `${pushStatus.devices} device(s) registered.` : "No devices registered yet.";
+        const d = await (await fetch("/api/push/devices")).json();
+        $("push-devices").innerHTML = (d.devices || []).map((dev) =>
+          `<div class="net-row"><span><strong>${esc(dev.label)}</strong> <span class="meta">registered ${dev.added ? new Date(dev.added * 1000).toLocaleDateString() : "—"}</span></span>`
+          + `<button data-ep="${esc(dev.endpoint)}" style="padding:6px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface-soft);color:var(--danger);cursor:pointer">Remove</button></div>`).join("");
+        $("push-devices").querySelectorAll("button[data-ep]").forEach((b) => b.onclick = async () => {
+          if (!confirm("Remove this device? It will stop receiving alerts.")) return;
+          await fetch("/api/push/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: b.dataset.ep }) });
+          loadDevices();
+        });
+      } catch (_) {}
+    }
+    loadDevices();
     $("push-add").onclick = async () => {
       try {
         const { token } = await (await fetch("/api/push/reg-token", { method: "POST" })).json();
@@ -412,17 +448,9 @@
     $("push-test").onclick = async () => {
       setNote("push-note", "Sending…", true);
       const r = await (await fetch("/api/push/test", { method: "POST" })).json();
-      setNote("push-note", r.ok ? `Sent to ${r.sent} device(s).` : (r.message || "No devices registered."), r.ok);
+      setNote("push-note", r.message || (r.ok ? `Sent to ${r.sent} device(s).` : "No devices registered."), r.ok);
+      loadDevices();
     };
-  }
-  function drawAlertQR() {
-    const topic = ($("al-topic")?.value || "").trim();
-    const server = ($("al-server")?.value || "https://ntfy.sh").trim().replace(/\/$/, "");
-    const box = $("alert-qr"), txt = $("alert-topic-txt");
-    if (!topic) { if (box) box.innerHTML = '<div style="color:#777;font-size:11px;padding:20px 6px;text-align:center">Set a topic to generate a QR</div>'; if (txt) txt.textContent = ""; return; }
-    const url = `${server}/${topic}`;
-    if (txt) txt.textContent = url;
-    if (window.DDQR && box) box.innerHTML = window.DDQR.svg(url, 116);
   }
 
   async function renderSystem(c) {

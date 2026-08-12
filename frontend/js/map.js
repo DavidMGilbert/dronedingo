@@ -17,11 +17,17 @@ window.DDMap = (() => {
     + '<circle cx="5.6" cy="18.4" r="2.7"/><circle cx="18.4" cy="18.4" r="2.7"/>'
     + '<rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.5"/></svg>';
   const OP_SVG = '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><circle cx="12" cy="7" r="3.4"/><path d="M4.5 20c0-4.1 3.4-6.5 7.5-6.5s7.5 2.4 7.5 6.5z"/></svg>';
+  // Flying saucer — the visual language for an unidentified, no-telemetry contact.
+  const UFO_SVG = '<svg viewBox="0 0 24 24" fill="currentColor">'
+    + '<ellipse cx="12" cy="12" rx="9" ry="3.4"/>'
+    + '<path d="M8.2 10.7a3.8 2.9 0 0 1 7.6 0z"/>'
+    + '<circle cx="6.6" cy="16.8" r=".9"/><circle cx="12" cy="18.3" r=".9"/><circle cx="17.4" cy="16.8" r=".9"/></svg>';
 
   let map = null;
   let ready = false;
   const pending = [];                 // ops queued until the style loads
   const drones = new Map();           // id -> maplibregl.Marker
+  const unids = new Map();            // id -> maplibregl.Marker (unidentified UFO)
   const operators = new Map();        // id -> maplibregl.Marker
   const tracks = new Map();           // id -> [[lon,lat], ...]
   let homeMarker = null;
@@ -160,6 +166,27 @@ window.DDMap = (() => {
       });
     },
 
+    /** An unidentified, no-telemetry contact: RF presence only. We can't know
+     *  where it is, so it's pinned near Home Base as a pulsing UFO. */
+    upsertUnidentified(id, lat, lon, label, onSelect) {
+      whenReady(() => {
+        let m = unids.get(id);
+        if (!m) {
+          const node = el(UFO_SVG, "unid-marker");
+          node.addEventListener("click", (ev) => {
+            ev.stopPropagation();
+            onSelect && onSelect(id);
+          });
+          m = new maplibregl.Marker({ element: node })
+            .setLngLat([lon, lat]).addTo(map);
+          unids.set(id, m);
+        } else {
+          m.setLngLat([lon, lat]);
+        }
+        m.getElement().title = label || "Unidentified contact";
+      });
+    },
+
     upsertOperator(id, lat, lon) {
       whenReady(() => {
         let m = operators.get(id);
@@ -185,6 +212,7 @@ window.DDMap = (() => {
     removeContact(id) {
       whenReady(() => {
         const d = drones.get(id); if (d) { d.remove(); drones.delete(id); }
+        const u = unids.get(id); if (u) { u.remove(); unids.delete(id); }
         const o = operators.get(id); if (o) { o.remove(); operators.delete(id); }
         if (tracks.delete(id)) pushTracks();
       });
@@ -195,6 +223,7 @@ window.DDMap = (() => {
     hideMarkers(id) {
       whenReady(() => {
         const d = drones.get(id); if (d) { d.remove(); drones.delete(id); }
+        const u = unids.get(id); if (u) { u.remove(); unids.delete(id); }
         const o = operators.get(id); if (o) { o.remove(); operators.delete(id); }
       });
     },
@@ -202,6 +231,7 @@ window.DDMap = (() => {
     clearContacts() {
       whenReady(() => {
         drones.forEach((m) => m.remove()); drones.clear();
+        unids.forEach((m) => m.remove()); unids.clear();
         operators.forEach((m) => m.remove()); operators.clear();
         tracks.clear(); pushTracks();
       });

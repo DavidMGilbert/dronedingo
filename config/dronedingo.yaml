@@ -67,14 +67,9 @@ sources:
       - { name: "1.2 GHz analog video", start: 1240000000, stop: 1300000000 }
 
 alerts:
-  # --- Phone push via ntfy (free, no account) ---------------------------------
-  # 1. Install "ntfy" on the phone (iOS/Android).
-  # 2. Subscribe to a long, unguessable topic name — anyone who knows the topic
-  #    can read your alerts, so treat it like a password.
-  # 3. Put the same topic here and restart. Test it from the UI (⚙ → Send test).
-  ntfy_topic: null            # e.g. "dronedingo-oakfield-7fq2p8xk"
-  ntfy_server: "https://ntfy.sh"   # or your own self-hosted ntfy
-
+  # Phone alerts are delivered by DroneDingo Push (see the `push:` block) —
+  # proprietary, end-to-end encrypted, no third-party app. Register phones from
+  # the dashboard (Settings → Alerts).
   webhook_url: null           # optional JSON POST target for other integrations
 
   # Alert when a contact comes within this many metres of Home Base.
@@ -97,7 +92,7 @@ push:
   subject: "mailto:admin@dronedingo.com.au"   # VAPID contact (per RFC 8292)
   # Tapping an alert opens this dashboard URL (deep-linked to the operator's
   # location + aircraft). Set it to the dashboard's public https address.
-  portal_url: null                            # e.g. "https://dronedingo.davidmgilbert.com"
+  portal_url: "https://dronedingo.davidmgilbert.com"
   # Base URL a phone uses to open the registration PWA. Web Push REQUIRES HTTPS,
   # so this must be an https:// origin the phone trusts (the appliance's own
   # https address, or your hosted alerts site). If null, the QR uses whatever

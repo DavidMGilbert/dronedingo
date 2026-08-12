@@ -125,6 +125,27 @@ def subscription_count() -> int:
     return len(_load_push_state().get("subscriptions", []))
 
 
+def _device_label(ua: str) -> str:
+    """A friendly device name from a user-agent string."""
+    ua = ua or ""
+    if "iPhone" in ua: return "iPhone"
+    if "iPad" in ua: return "iPad"
+    if "Android" in ua: return "Android"
+    if "Macintosh" in ua: return "Mac"
+    if "Windows" in ua: return "Windows"
+    return "Device"
+
+
+def list_devices() -> list[dict]:
+    out = []
+    for s in _load_push_state().get("subscriptions", []):
+        ep = s.get("endpoint", "")
+        out.append({"endpoint": ep, "ua": s.get("ua", ""), "added": s.get("added"),
+                    "label": _device_label(s.get("ua", "")),
+                    "id": ep.rsplit("/", 1)[-1][:8]})
+    return out
+
+
 # --------------------------------------------------------------------------
 # registration tokens — let a phone register via the QR without logging in
 # --------------------------------------------------------------------------

@@ -212,14 +212,14 @@ class TestFrameParsing(unittest.TestCase):
 # --------------------------------------------------------------------------
 class TestAlerts(unittest.TestCase):
     def _alerter(self, **over):
-        conf = {"alerts": {"ntfy_topic": "t", "resight_after_s": 300,
+        conf = {"alerts": {"webhook_url": "https://x", "resight_after_s": 300,
                            "alert_ring_m": 250, **over},
                 "map": {"range_rings_m": [250]}}
         return Alerter(conf)
 
     def test_disabled_without_target(self):
         # Isolate from any DroneDingo Push devices registered on this machine —
-        # this asserts the ntfy/webhook side is off when unconfigured.
+        # this asserts the push/webhook side is off when unconfigured.
         from unittest import mock
         with mock.patch("app.alerts.push.subscription_count", return_value=0):
             self.assertFalse(Alerter({"alerts": {}}).enabled)
@@ -243,7 +243,7 @@ class TestAlerts(unittest.TestCase):
         self.assertTrue(a._should_fire("B", 100))
 
     def test_ring_defaults_to_inner_range_ring(self):
-        a = Alerter({"alerts": {"ntfy_topic": "t"}, "map": {"range_rings_m": [400, 800]}})
+        a = Alerter({"alerts": {}, "map": {"range_rings_m": [400, 800]}})
         self.assertEqual(a.ring_m, 400)
 
     def test_quiet_hours_window_crossing_midnight(self):

@@ -1,4 +1,4 @@
-"""Alert delivery — phone push via ntfy, plus a generic webhook.
+"""Alert delivery — phone push via DroneDingo Push, plus a generic webhook.
 
 Design goal: an alert the farmer will still act on in week three. That means
 **one notification per sighting**, not one per beacon. A drone broadcasts
@@ -46,8 +46,6 @@ def _in_window(now: dtime, start: dtime, end: dtime) -> bool:
 class Alerter:
     def __init__(self, conf: dict) -> None:
         a = conf.get("alerts") or {}
-        self.topic = a.get("ntfy_topic")
-        self.server = (a.get("ntfy_server") or "https://ntfy.sh").rstrip("/")
         self.webhook = a.get("webhook_url")
         self.quiet = _parse_quiet(a.get("quiet_hours"))
         self.quiet_suppresses = bool(a.get("quiet_hours_suppress", False))
@@ -59,8 +57,8 @@ class Alerter:
 
     @property
     def enabled(self) -> bool:
-        # Fire if any channel is live: ntfy, webhook, or a registered push device.
-        if self.topic or self.webhook:
+        # Fire if any channel is live: a registered push device, or a webhook.
+        if self.webhook:
             return True
         try:
             return push.enabled() and push.subscription_count() > 0
@@ -123,38 +121,11 @@ class Alerter:
                     "drone": det.get("drone_id")})
         except Exception as exc:
             log.warning("DroneDingo Push delivery failed: %s", exc)
-        if self.topic:
-            try:
-                self._send_ntfy(title, body, det)
-            except Exception as exc:
-                log.warning("ntfy delivery failed: %s", exc)
         if self.webhook:
             try:
                 self._send_webhook(det)
             except Exception as exc:
                 log.warning("webhook delivery failed: %s", exc)
-
-    def _send_ntfy(self, title: str, body: str, det: dict) -> None:
-        url = f"{self.server}/{self.topic}"
-        headers = {
-            "Title": title,
-            "Priority": "high",
-            "Tags": "rotating_light",
-            "Content-Type": "text/plain; charset=utf-8",
-        }
-        # Deep-link the operator position to a map when we have one.
-        if det.get("operator_lat") is not None:
-            headers["Actions"] = (
-                "view, Operator location, "
-                f"https://www.openstreetmap.org/?mlat={det['operator_lat']}"
-                f"&mlon={det['operator_lon']}#map=17/"
-                f"{det['operator_lat']}/{det['operator_lon']}"
-            )
-        req = urllib.request.Request(url, data=body.encode("utf-8"),
-                                     headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-            resp.read()
-        log.info("alert sent: %s", title)
 
     def _send_webhook(self, det: dict) -> None:
         req = urllib.request.Request(
@@ -164,15 +135,11 @@ class Alerter:
             resp.read()
 
     def test(self) -> dict:
-        """Send a test notification; returns a result dict for the API."""
-        if not self.enabled:
-            return {"ok": False, "error": "No ntfy topic or webhook configured."}
+        """Send a test webhook. (Phone alerts are tested via DroneDingo Push.)"""
+        if not self.webhook:
+            return {"ok": False, "error": "No webhook configured."}
         try:
-            self._send_ntfy("DroneDingo test alert",
-                            "If you can read this, alerts are working.", {}) \
-                if self.topic else None
-            if self.webhook:
-                self._send_webhook({"test": True})
+            self._send_webhook({"test": True})
             return {"ok": True}
         except Exception as exc:
             return {"ok": False, "error": str(exc)}

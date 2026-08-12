@@ -264,8 +264,6 @@ async def api_alerts_status():
     a = manager.alerter
     return {
         "enabled": a.enabled,
-        "ntfy_topic": a.topic,
-        "ntfy_server": a.server,
         "webhook": bool(a.webhook),
         "alert_ring_m": a.ring_m,
         "resight_after_s": a.resight_after_s,
@@ -277,8 +275,6 @@ async def api_alerts_config():
     """Full alerts config for the settings form."""
     a = (cfg.load().get("alerts") or {})
     return {
-        "ntfy_topic": a.get("ntfy_topic"),
-        "ntfy_server": a.get("ntfy_server") or "https://ntfy.sh",
         "webhook_url": a.get("webhook_url"),
         "alert_ring_m": manager.alerter.ring_m,
         "resight_after_s": a.get("resight_after_s", 300),
@@ -290,7 +286,7 @@ async def api_alerts_config():
 @app.post("/api/alerts/config")
 async def api_alerts_config_save(payload: dict):
     """Persist alert settings from the UI and reload the alerter."""
-    allowed = ("ntfy_topic", "ntfy_server", "webhook_url", "alert_ring_m",
+    allowed = ("webhook_url", "alert_ring_m",
                "resight_after_s", "quiet_hours", "quiet_hours_suppress")
     values = {}
     for k in allowed:
@@ -326,6 +322,18 @@ async def api_push_status():
             "node": cfg.get_node_id(), "pubkey": push.public_key_b64()}
 
 
+@app.get("/api/push/devices")
+async def api_push_devices():
+    return {"devices": push.list_devices()}
+
+
+@app.post("/api/push/remove")
+async def api_push_remove(payload: dict):
+    """Admin de-registration of a device from the dashboard."""
+    push.remove_subscription(payload.get("endpoint", ""))
+    return {"ok": True, "devices": push.subscription_count()}
+
+
 @app.post("/api/push/reg-token")
 async def api_push_reg_token():
     """Mint a short-lived token that lets a phone register via the QR."""
@@ -336,6 +344,7 @@ async def api_push_reg_token():
 async def api_push_subscribe(request: Request, payload: dict):
     if not (request.session.get("uid") or push.check_reg_token(payload.get("token", ""))):
         return JSONResponse({"ok": False, "error": "registration link expired — reopen the QR"}, status_code=401)
+    payload.setdefault("ua", request.headers.get("user-agent", ""))
     try:
         push.add_subscription(payload)
     except ValueError as exc:

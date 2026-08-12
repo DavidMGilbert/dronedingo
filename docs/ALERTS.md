@@ -1,31 +1,23 @@
-# Phone alerts (ntfy)
+# Phone alerts
 
 DroneDingo pushes a notification to the farmer's phone the moment a drone comes
-within the alert ring. It uses **ntfy** — free, no account, no app-store
-subscription, and it works over any internet connection the Pi has.
+within the alert ring. Alerts are delivered by **DroneDingo Push** — proprietary,
+end-to-end encrypted Web Push sent straight from the appliance. No third-party
+app, no ntfy, no Apple/Google developer account.
 
-## Setup (5 minutes)
+## Setup
 
-1. **Install the ntfy app** on the phone (iOS App Store / Google Play / F-Droid).
-2. **Choose a topic name.** Anyone who knows the topic can read your alerts, so
-   treat it like a password — make it long and random:
-   ```
-   dronedingo-oakfield-7fq2p8xk
-   ```
-3. **Subscribe** to that topic in the app (+ → Subscribe to topic).
-4. **Tell the appliance**, in `config/dronedingo.yaml`:
-   ```yaml
-   alerts:
-     ntfy_topic: "dronedingo-oakfield-7fq2p8xk"
-   ```
-5. Restart and test:
-   ```bash
-   sudo systemctl restart dronedingo
-   ```
-   Then open the dashboard → **⚙ → Send test alert**. The phone should buzz.
+Register a phone from the dashboard: **⚙ Settings → Alerts → Add a phone**.
+Scan the QR with the phone's camera, open the link, and tap **Enable alerts**.
+Repeat for everyone who needs alerting (farmer, farm manager, a neighbour) — each
+phone registers itself and appears in the device list, where it can also be
+removed.
 
-Everyone who needs alerting (farmer, farm manager, a neighbour) just subscribes
-to the same topic on their own phone.
+Then send a test: **⚙ Settings → Alerts → Send test push**. The phone should buzz.
+
+For the mechanics (VAPID keys, the notify.dronedingo.com.au relay for appliances
+without their own public HTTPS, and what production installs do and don't need),
+see [PUSH_SETUP.md](PUSH_SETUP.md) and [PUSH_NOTIFICATIONS.md](PUSH_NOTIFICATIONS.md).
 
 ## What an alert looks like
 
@@ -39,9 +31,9 @@ Operator: 52.23800, -0.90010
 Source: DroneID/WiFi
 ```
 
-When the operator's position is broadcast, the notification carries a **tap
-action that opens their location on a map** — the single most useful thing to
-have on a phone at 2am.
+Tapping the alert opens the **DroneDingo portal deep-linked to the operator's
+location and the aircraft** — the single most useful thing to have on a phone at
+2am.
 
 ## Alert tuning
 
@@ -54,7 +46,7 @@ have on a phone at 2am.
 
 **On debouncing:** a drone broadcasts several times a second. Without
 `resight_after_s` one overflight would produce hundreds of notifications and
-the farmer would mute the app within a week — which means no alerting at all
+the farmer would mute alerts within a week — which means no alerting at all
 when it matters. DroneDingo therefore sends **one alert per sighting**.
 
 **On quiet hours:** overnight is exactly when theft happens, so quiet hours are
@@ -62,9 +54,11 @@ deliberately *not* suppressing by default. You must opt in.
 
 ## Privacy note
 
-ntfy.sh is a public relay: the alert body (including operator coordinates)
-passes through it. For sensitive deployments, self-host ntfy and point
-`ntfy_server` at your own instance.
+Detection data is never relayed through a third party. The appliance encrypts
+each alert (RFC 8291) and sends it directly to the phone's push service; only
+the phone can decrypt it. When the notify.dronedingo.com.au relay is used, it
+only parks a phone's subscription at registration time — no detection data ever
+passes through it.
 
 ## Other integrations
 

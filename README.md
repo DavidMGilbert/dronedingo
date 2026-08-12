@@ -117,7 +117,7 @@ Everything lives in [`config/dronedingo.yaml`](config/dronedingo.yaml):
 
 - **Re-badge the whole product** by changing `brand.product_name` / `accent`.
 - Set default map centre, range rings, RTL-SDR bands & trigger threshold.
-- `alerts.ntfy_topic` for free phone push; `alerts.webhook_url` for integrations.
+- Register phones for **DroneDingo Push** from the dashboard; `alerts.webhook_url` for integrations.
 
 ## Architecture
 
@@ -138,7 +138,7 @@ Everything lives in [`config/dronedingo.yaml`](config/dronedingo.yaml):
 - [x] Bluetooth Remote ID source
 - [x] Single-command unattended installer
 - [x] DJI proprietary DroneID decode (v1/v2, incl. operator position)
-- [x] Phone push alerts (ntfy) + webhook
+- [x] Phone push alerts (DroneDingo Push) + webhook
 - [x] Offline vector basemap (appliance-served MapLibre)
 - [x] Login-gated UI + admin panel (system/network/alerts/updates)
 - [x] Light / dark themes; DroneDingo brand + Barlow type
