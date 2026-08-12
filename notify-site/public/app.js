@@ -11,48 +11,81 @@
   const key = p.get("k") || "";   // appliance VAPID public key (base64url)
 
   const setStatus = (m, c) => { const s = $("status"); s.textContent = m; s.className = "status " + (c || ""); };
+  const step = (m) => { setStatus(m); console.log("[dronedingo]", m); };
+  const fail = (m) => { setStatus(m, "bad"); $("enable").disabled = false; console.error("[dronedingo]", m); };
+  const withTimeout = (promise, ms, msg) =>
+    Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error(msg)), ms))]);
+
   function b64ToU8(b64) {
     const pad = "=".repeat((4 - (b64.length % 4)) % 4);
     const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
     return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
   }
 
+  // In-app browsers (scanned inside Instagram/Facebook/a QR app) usually can't
+  // do Web Push. Standalone = launched from the Home Screen (installed).
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-  if (!window.isSecureContext) { setStatus("This page must be served over HTTPS.", "bad"); $("enable").disabled = true; }
+
+  if (!window.isSecureContext) { fail("This page must be served over HTTPS."); $("enable").disabled = true; }
   else if (!node || !token || !key) {
-    setStatus("This link is missing its registration details.", "bad");
-    $("hint").textContent = "Open Settings → Alerts → DroneDingo Push on the appliance and scan the QR again.";
+    fail("This link is missing its registration details.");
+    $("hint").textContent = "On the appliance: Settings → Alerts → DroneDingo Push → Add a phone, then scan the fresh QR.";
     $("enable").disabled = true;
   } else if (!supported) {
-    setStatus("This browser can't do push notifications.", "bad");
-    $("hint").textContent = "On iPhone: Share → Add to Home Screen, open it from there, then enable alerts (iOS 16.4+).";
+    fail("This browser can't do push notifications.");
+    $("hint").textContent = isIOS
+      ? "On iPhone: tap Share → Add to Home Screen, then open DroneDingo from the Home Screen (iOS 16.4+)."
+      : "Open this link in Chrome (not inside another app's browser).";
     $("enable").disabled = true;
+  } else if (isIOS && !standalone) {
+    // iOS only delivers Web Push to an INSTALLED PWA.
+    $("hint").textContent = "iPhone: tap the Share icon → Add to Home Screen, open DroneDingo from the Home Screen, then tap Enable.";
   }
 
   async function enable() {
-    $("enable").disabled = true; setStatus("Setting up…");
+    $("enable").disabled = true;
     try {
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") { setStatus("Notifications were not allowed.", "bad"); $("enable").disabled = false; return; }
+      step("Requesting permission…");
+      const perm = await withTimeout(Notification.requestPermission(), 60000, "permission prompt didn't return");
+      if (perm !== "granted") { fail("Notifications were not allowed for this site."); return; }
 
+      step("Registering…");
       const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      await navigator.serviceWorker.ready;
+      await withTimeout(navigator.serviceWorker.ready, 12000, "the notification service didn't start (reload and retry)");
 
+      step("Subscribing…");
       let sub = await reg.pushManager.getSubscription();
-      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) });
+      if (sub) {
+        // Reuse only if it was made with this appliance's key; else replace.
+        const existing = new Uint8Array(sub.options.applicationServerKey || []);
+        const wanted = b64ToU8(key);
+        const same = existing.length === wanted.length && existing.every((b, i) => b === wanted[i]);
+        if (!same) { await sub.unsubscribe().catch(() => {}); sub = null; }
+      }
+      if (!sub) {
+        sub = await withTimeout(
+          reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) }),
+          25000,
+          isIOS && !standalone
+            ? "Add DroneDingo to the Home Screen first, open it from there, then Enable."
+            : "Couldn't reach the push service. Open in Chrome/Safari (not an in-app browser) and check the connection.");
+      }
 
+      step("Saving…");
       const j = sub.toJSON();
-      const res = await fetch("/api/register.php", {
+      const res = await withTimeout(fetch("/api/register.php", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ node, token, subscription: { endpoint: j.endpoint, keys: j.keys } }),
-      });
+      }), 15000, "couldn't reach the registration server");
       const d = await res.json();
       if (res.ok && d.ok) {
         setStatus("✓ Registered. Your DroneDingo will confirm shortly.", "ok");
         $("enable").textContent = "Alerts enabled";
-        $("hint").textContent = "You can close this page. Add it to your Home Screen to keep alerts reliable. A test alert will arrive within a minute.";
-      } else { setStatus(d.error || "Registration failed.", "bad"); $("enable").disabled = false; }
-    } catch (e) { setStatus("Could not enable alerts: " + e.message, "bad"); $("enable").disabled = false; }
+        $("hint").textContent = "You can close this page. A confirmation alert arrives within a minute.";
+      } else { fail(d.error || "Registration failed on the server."); }
+    } catch (e) { fail("Could not enable alerts: " + (e.message || e)); }
   }
   $("enable").addEventListener("click", enable);
 })();
