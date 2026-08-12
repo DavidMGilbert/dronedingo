@@ -6,9 +6,20 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const p = new URLSearchParams(location.search);
-  const node = p.get("node") || "";
-  const token = p.get("t") || p.get("token") || "";
-  const key = p.get("k") || "";   // appliance VAPID public key (base64url)
+  let node = p.get("node") || "";
+  let token = p.get("t") || p.get("token") || "";
+  let key = p.get("k") || "";      // appliance VAPID public key (base64url)
+
+  // iOS drops the query string when the PWA is launched from the Home Screen,
+  // so stash the registration details on first load and restore them after.
+  try {
+    if (node && token && key) {
+      localStorage.setItem("dd-reg", JSON.stringify({ node, token, key }));
+    } else {
+      const s = JSON.parse(localStorage.getItem("dd-reg") || "{}");
+      node = node || s.node || ""; token = token || s.token || ""; key = key || s.key || "";
+    }
+  } catch (_) {}
 
   const setStatus = (m, c) => { const s = $("status"); s.textContent = m; s.className = "status " + (c || ""); };
   const step = (m) => { setStatus(m); console.log("[dronedingo]", m); };
@@ -20,6 +31,19 @@
     const pad = "=".repeat((4 - (b64.length % 4)) % 4);
     const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
     return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+  // navigator.serviceWorker.ready can hang forever on iOS; resolve as soon as
+  // the worker is active (or after a grace period) and let subscribe() proceed.
+  function waitForActive(reg, ms) {
+    return new Promise((resolve) => {
+      if (reg.active) return resolve(true);
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      const t = setTimeout(() => finish(false), ms);
+      const sw = reg.installing || reg.waiting;
+      if (sw) sw.addEventListener("statechange", () => { if (reg.active) { clearTimeout(t); finish(true); } });
+      navigator.serviceWorker.addEventListener("controllerchange", () => { clearTimeout(t); finish(true); }, { once: true });
+    });
   }
 
   // In-app browsers (scanned inside Instagram/Facebook/a QR app) usually can't
@@ -40,8 +64,10 @@
       : "Open this link in Chrome (not inside another app's browser).";
     $("enable").disabled = true;
   } else if (isIOS && !standalone) {
-    // iOS only delivers Web Push to an INSTALLED PWA.
-    $("hint").textContent = "iPhone: tap the Share icon → Add to Home Screen, open DroneDingo from the Home Screen, then tap Enable.";
+    // iOS ONLY does Web Push from an installed PWA — block the Safari-tab attempt.
+    fail("On iPhone, add DroneDingo to your Home Screen first.");
+    $("hint").textContent = "Tap the Share icon → Add to Home Screen, then open DroneDingo from the Home Screen and tap Enable.";
+    $("enable").disabled = true;
   }
 
   async function enable() {
@@ -51,9 +77,9 @@
       const perm = await withTimeout(Notification.requestPermission(), 60000, "permission prompt didn't return");
       if (perm !== "granted") { fail("Notifications were not allowed for this site."); return; }
 
-      step("Registering…");
+      step("Registering… (v2)");
       const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-      await withTimeout(navigator.serviceWorker.ready, 12000, "the notification service didn't start (reload and retry)");
+      await waitForActive(reg, 8000);        // best-effort; don't fail if slow
 
       step("Subscribing…");
       let sub = await reg.pushManager.getSubscription();

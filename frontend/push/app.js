@@ -15,6 +15,19 @@
     const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
     return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
   }
+  // navigator.serviceWorker.ready can hang forever on iOS; resolve as soon as
+  // the worker is active (or after a grace period) and let subscribe() proceed.
+  function waitForActive(reg, ms) {
+    return new Promise((resolve) => {
+      if (reg.active) return resolve(true);
+      let done = false;
+      const finish = (v) => { if (!done) { done = true; resolve(v); } };
+      const t = setTimeout(() => finish(false), ms);
+      const sw = reg.installing || reg.waiting;
+      if (sw) sw.addEventListener("statechange", () => { if (reg.active) { clearTimeout(t); finish(true); } });
+      navigator.serviceWorker.addEventListener("controllerchange", () => { clearTimeout(t); finish(true); }, { once: true });
+    });
+  }
 
   const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
   const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
@@ -31,7 +44,9 @@
       : "Open this link in Chrome (not inside another app's browser).";
     $("enable").disabled = true;
   } else if (isIOS && !standalone) {
-    $("hint").textContent = "iPhone: tap Share → Add to Home Screen, open DroneDingo from the Home Screen, then Enable.";
+    fail("On iPhone, add DroneDingo to your Home Screen first.");
+    $("hint").textContent = "Tap Share → Add to Home Screen, then open DroneDingo from the Home Screen and tap Enable.";
+    $("enable").disabled = true;
   }
 
   async function enable() {
@@ -41,9 +56,9 @@
       const perm = await withTimeout(Notification.requestPermission(), 60000, "permission prompt didn't return");
       if (perm !== "granted") { fail("Notifications were not allowed."); return; }
 
-      step("Registering…");
+      step("Registering… (v2)");
       const reg = await navigator.serviceWorker.register("/push/sw.js", { scope: "/push/" });
-      await withTimeout(navigator.serviceWorker.ready, 12000, "the notification service didn't start (reload and retry)");
+      await waitForActive(reg, 8000);        // best-effort; don't fail if slow
 
       step("Subscribing…");
       const { key } = await (await fetch("/api/push/pubkey")).json();
