@@ -100,6 +100,13 @@ def _is_public(path: str) -> bool:
 
 async def _auth_guard(request: Request, call_next):
     path = request.url.path
+    # Single sign-on for remote access: a request carrying our own tunnel's
+    # in-memory secret was already authenticated at the dashboard (account +
+    # station-ownership), so accept it without a second appliance login. The
+    # secret is unforgeable from outside, and the client strips any browser copy.
+    if not request.session.get("uid") and \
+            request.headers.get(tunnel.AUTH_HEADER) == tunnel.AUTH_TOKEN:
+        request.session["uid"] = "remote"
     # Gate first: unauthenticated APIs get 401, pages redirect to login.
     if _AUTH_ENABLED and not _is_public(path) and not request.session.get("uid"):
         if path.startswith(("/api/", "/tiles/")):

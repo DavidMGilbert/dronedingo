@@ -14,6 +14,7 @@ import asyncio
 import base64
 import json
 import logging
+import secrets
 import urllib.error
 import urllib.request
 
@@ -25,6 +26,14 @@ log = logging.getLogger("dronedingo")
 
 LOCAL_BASE = "http://127.0.0.1:8000"          # this appliance's own web UI
 _HOP = {"transfer-encoding", "connection", "content-length", "keep-alive"}
+
+# Per-boot, in-memory secret proving a local request came from THIS appliance's
+# own tunnel client. The auth guard trusts it to skip a second login for remote
+# users (who already authenticated at the dashboard). It never leaves the box,
+# is random each boot, and the client strips any browser-supplied copy — so it
+# cannot be forged from the LAN or through the tunnel.
+AUTH_TOKEN = secrets.token_hex(24)
+AUTH_HEADER = "X-DD-Tunnel-Auth"
 
 # Don't follow redirects locally — the browser must see the 3xx (e.g. login).
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -65,13 +74,18 @@ def _run_local(msg: dict):
     body = base64.b64decode(msg["body"]) if msg.get("body") else None
     req = urllib.request.Request(LOCAL_BASE + path, data=body, method=method)
     for k, v in (msg.get("headers") or {}).items():
-        # No compression — keeps the relay's job to plain bytes.
-        if k.lower() in ("accept-encoding", "host", "content-length"):
+        # No compression; and strip any browser-supplied auth header so it can't
+        # forge the trusted marker we add below.
+        if k.lower() in ("accept-encoding", "host", "content-length",
+                         AUTH_HEADER.lower()):
             continue
         try:
             req.add_header(k, v)
         except Exception:
             pass
+    # Mark the request as coming from our own tunnel — lets the appliance skip a
+    # second login for a user the dashboard already authenticated.
+    req.add_header(AUTH_HEADER, AUTH_TOKEN)
     try:
         with _opener.open(req, timeout=30) as r:
             return r.status, dict(r.headers.items()), r.read()
