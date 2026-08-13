@@ -37,10 +37,13 @@ Appliance ──poll (its own key)──▶ /api/pending.php ─▶ takes its su
 
 ## Deploy (any PHP 8+ host)
 
-1. Point the `notify.dronedingo.com.au` docroot at `public/`.
-2. Ensure PHP can write a data dir one level **above** the docroot (the SQLite
-   mailbox + `appliances` table live at `../notify-data/notify.sqlite`, outside
-   the web root). The tables auto-create on first request.
+1. Upload the **contents** of `public/` into the site's docroot (e.g.
+   `public_html/notify.dronedingo.com.au/`, so `index.php` is at the site root).
+2. The SQLite database self-creates at `dd-data/notify.sqlite` inside the
+   docroot; a shipped `dd-data/.htaccess` (plus a global rule) blocks it from the
+   web, so it's inside `public_html` but not downloadable. PHP just needs to be
+   able to write the `dd-data/` folder (the default on cPanel-style hosts). To
+   place it elsewhere, set `DRONEDINGO_DB_PATH`. Tables auto-create.
 3. Set the **enrollment secret** — either edit `ENROLL_SECRET_FALLBACK` in
    `public/api/_config.php` or set the env var `DRONEDINGO_ENROLL_SECRET`. This
    is the ONE shared secret; it only authorises an appliance to *claim a node*,

@@ -15,5 +15,11 @@ DirectoryIndex index.php index.html
   Require all denied
 </FilesMatch>
 
+# Belt-and-suspenders: never serve the SQLite database or its sidecar files,
+# wherever they end up (the db lives in dd-data/, which is also denied there).
+<FilesMatch "\.(sqlite|sqlite-journal|sqlite-wal|sqlite-shm|db)$">
+  Require all denied
+</FilesMatch>
+
 # Correct MIME for the web app manifest.
 AddType application/manifest+json .webmanifest
