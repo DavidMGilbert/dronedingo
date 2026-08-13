@@ -114,7 +114,10 @@ step "Placing application in $APP_DIR…"
 id -u "$SERVICE_USER" &>/dev/null || run useradd -r -m -s /usr/sbin/nologin "$SERVICE_USER"
 mkdir -p "$APP_DIR"
 # If piped from curl (no local repo), clone; otherwise copy the working tree.
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd || true)"
+# ${BASH_SOURCE[0]:-} is empty when the script has no on-disk path (piped/stdin),
+# which must not trip `set -u`; an empty SRC_DIR just selects the clone branch.
+SELF="${BASH_SOURCE[0]:-}"
+SRC_DIR="$([[ -n "$SELF" ]] && cd "$(dirname "$SELF")/.." 2>/dev/null && pwd || true)"
 if [[ -n "$SRC_DIR" && -f "$SRC_DIR/backend/requirements.txt" ]]; then
   run rsync -a --exclude .git --exclude .venv --exclude data "$SRC_DIR"/ "$APP_DIR"/
 else
