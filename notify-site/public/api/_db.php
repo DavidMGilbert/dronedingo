@@ -41,7 +41,54 @@ function db(): PDO {
         created INTEGER NOT NULL,
         done INTEGER)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tunnel_node ON tunnel(node, status)');
+    // --- multi-station accounts (self-service onboarding) ------------------
+    // A customer account owns one or more stations. On first boot the appliance
+    // walks the user through signup/login and claims a subdomain, linking the
+    // node to the account — so one account can gather many stations.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        pass_hash TEXT NOT NULL,
+        created INTEGER NOT NULL)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS account_nodes (
+        account_id INTEGER NOT NULL,
+        node TEXT NOT NULL,
+        subdomain TEXT UNIQUE,
+        label TEXT,
+        created INTEGER NOT NULL,
+        PRIMARY KEY (account_id, node))');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_acctnode_node ON account_nodes(node)');
+    $pdo->exec('CREATE TABLE IF NOT EXISTS account_sessions (
+        token TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL,
+        created INTEGER NOT NULL)');
     return $pdo;
+}
+
+/** Resolve an account session token to an account id (30-day sessions). */
+function account_from_token(PDO $pdo, string $token): ?int {
+    if ($token === '') return null;
+    $st = $pdo->prepare('SELECT account_id, created FROM account_sessions WHERE token = ?');
+    $st->execute([$token]);
+    $row = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return null;
+    if ((int)$row['created'] < time() - 30 * 86400) {
+        $pdo->prepare('DELETE FROM account_sessions WHERE token = ?')->execute([$token]);
+        return null;
+    }
+    return (int)$row['account_id'];
+}
+
+/** The node a dashboard subdomain maps to (or '' if unclaimed). */
+function node_for_subdomain(PDO $pdo, string $sub): string {
+    $st = $pdo->prepare('SELECT node FROM account_nodes WHERE subdomain = ?');
+    $st->execute([strtolower($sub)]);
+    $n = $st->fetchColumn();
+    return $n !== false ? (string)$n : '';
+}
+
+function new_session_token(): string {
+    return bin2hex(random_bytes(24));
 }
 
 // Drop tunnel rows older than 60s so a stalled request never lingers.
