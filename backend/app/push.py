@@ -51,10 +51,11 @@ _lock = threading.RLock()
 DEFAULT_RELAY_URL = "https://notify.dronedingo.com.au"
 # Firmware bootstrap secret used ONLY to enroll (claim a node + register this
 # appliance's own unique key). It never grants access to any node's parked
-# registrations. Provisioned out-of-band; must match the relay's
-# DRONEDINGO_ENROLL_SECRET. The per-appliance relay key is generated on first
-# boot (ensure_relay_key) — it is never shared and never written to config.
-DEFAULT_ENROLL_SECRET = ""
+# registrations — the per-appliance relay key (ensure_relay_key) does, and that
+# is unique per device and never shared. This baked default lets appliances
+# self-enroll out of the box; it must match the relay's ENROLL_SECRET_FALLBACK
+# (or its DRONEDINGO_ENROLL_SECRET). Override per-fleet via DRONEDINGO_ENROLL_SECRET.
+DEFAULT_ENROLL_SECRET = "dd-enroll-ff250ec00af0b87fbac714941f3e8c1569cea4b507d2fb03"
 
 
 def _enroll_secret() -> str:

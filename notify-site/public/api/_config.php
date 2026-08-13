@@ -12,8 +12,9 @@ function relay_key(): string {
 // Bootstrap secret an appliance presents to ENROLL itself (claim a node and
 // register its own unique key). It only gates enrollment — it never grants
 // access to any node's parked registrations, so it is far less sensitive than
-// a per-node key. Must match the firmware's DRONEDINGO_ENROLL_SECRET.
-const ENROLL_SECRET_FALLBACK = 'CHANGE-ME-to-a-long-random-enrollment-secret';
+// a per-node key. This default matches the firmware's DEFAULT_ENROLL_SECRET so
+// appliances enroll out of the box; override with DRONEDINGO_ENROLL_SECRET.
+const ENROLL_SECRET_FALLBACK = 'dd-enroll-ff250ec00af0b87fbac714941f3e8c1569cea4b507d2fb03';
 
 function enroll_secret(): string {
     $k = getenv('DRONEDINGO_ENROLL_SECRET');
