@@ -96,9 +96,12 @@ push:
   # Register phones from the dashboard (Settings → Alerts → Add a phone).
   enabled: true
   subject: "mailto:admin@dronedingo.com.au"   # VAPID contact (per RFC 8292)
-  # Tapping an alert opens this dashboard URL (deep-linked to the operator's
-  # location + aircraft). Set it to the dashboard's public https address.
-  portal_url: "https://dronedingo.davidmgilbert.com"
+  # Optional. If this appliance's dashboard is reachable at a URL (e.g. its
+  # LAN address like http://192.168.1.50:8000, or a public https address),
+  # set it here and tapping an alert deep-links to the operator's location +
+  # aircraft. Leave null to just show the alert (it already carries the range,
+  # bearing and operator coordinates in its text).
+  portal_url: null
 
 updates:
   # Production appliances update from the website (see docs/UPDATE_PROTOCOL.md).
