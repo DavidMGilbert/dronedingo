@@ -440,7 +440,10 @@ async def api_demo_set(payload: dict):
 # ----------------------------- Remote access -------------------------------
 @app.get("/api/remote")
 async def api_remote_status():
-    return {"enabled": tunnel.enabled(), "running": tunnel.is_running()}
+    st = cfg.get_state()
+    return {"enabled": tunnel.enabled(), "running": tunnel.is_running(),
+            "subdomain": st.get("remote_subdomain"), "url": st.get("remote_url"),
+            "account": st.get("remote_account")}
 
 
 @app.post("/api/remote")
@@ -453,6 +456,55 @@ async def api_remote_set(payload: dict):
     else:
         tunnel.stop()
     return {"ok": True, "enabled": on, "running": tunnel.is_running()}
+
+
+# --- first-boot wizard: dashboard account + claim this station -------------
+@app.post("/api/remote/signup")
+async def api_remote_signup(payload: dict):
+    return await asyncio.to_thread(tunnel.account_signup,
+                                   payload.get("email", ""), payload.get("password", ""))
+
+
+@app.post("/api/remote/login")
+async def api_remote_login(payload: dict):
+    return await asyncio.to_thread(tunnel.account_login,
+                                   payload.get("email", ""), payload.get("password", ""))
+
+
+@app.post("/api/remote/import")
+async def api_remote_import(payload: dict):
+    return await asyncio.to_thread(tunnel.account_import,
+                                   payload.get("email", ""), payload.get("password", ""))
+
+
+@app.get("/api/remote/check")
+async def api_remote_check(s: str):
+    return await asyncio.to_thread(tunnel.subdomain_check, s)
+
+
+@app.post("/api/remote/claim")
+async def api_remote_claim(payload: dict):
+    """Link this station to the account under a chosen subdomain, then turn on
+    remote access."""
+    r = await asyncio.to_thread(tunnel.station_claim, payload.get("token", ""),
+                                payload.get("subdomain", ""), payload.get("label", ""))
+    if r.get("ok"):
+        cfg.update_state(remote_access_enabled=True,
+                         remote_subdomain=r.get("subdomain"), remote_url=r.get("url"),
+                         remote_account=payload.get("email") or cfg.get_state().get("remote_account"))
+        tunnel.start()
+    return r
+
+
+@app.get("/api/setup")
+async def api_setup_status():
+    return {"complete": bool(cfg.get_state().get("setup_complete"))}
+
+
+@app.post("/api/setup")
+async def api_setup_done(payload: dict):
+    cfg.update_state(setup_complete=True)
+    return {"ok": True}
 
 
 # ----------------------------- Updates -------------------------------------

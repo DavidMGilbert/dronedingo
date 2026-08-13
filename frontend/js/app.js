@@ -68,6 +68,124 @@
     tickClock(); setInterval(tickClock, 1000);
     setInterval(pruneContacts, 3000);
     loadEvents();
+    maybeWizard();
+  }
+
+  /* --------------------------- first-boot wizard --------------------------- */
+  async function maybeWizard() {
+    try {
+      const s = await (await fetch("/api/setup")).json();
+      if (!s.complete) showWizard();
+    } catch (_) {}
+  }
+
+  function showWizard() {
+    const ov = document.createElement("div");
+    ov.className = "wiz-overlay";
+    document.body.appendChild(ov);
+    let account = null;           // {token, email} once signed in
+    const done = async (skipRemote) => {
+      await fetch("/api/setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+      ov.remove();
+    };
+    const H = (s) => s;           // passthrough (content is trusted markup)
+    function step(html) { ov.innerHTML = `<div class="wiz-card">${html}</div>`; }
+
+    // Step 1 — welcome
+    function welcome() {
+      step(`<div class="wiz-logo">${ICON_DRONE}</div>
+        <h2>Welcome to Drone<span>Dingo</span></h2>
+        <p class="wiz-lead">Let's get your watchdog set up. Takes about a minute.</p>
+        <div class="wiz-actions"><button class="primary" id="w-go">Get started</button></div>`);
+      $("w-go").onclick = homeStep;
+    }
+    // Step 2 — home base
+    function homeStep() {
+      step(`<h2>Where is this station?</h2>
+        <p class="wiz-lead">Range and bearing to every drone are measured from here.</p>
+        ${field("Property / station name", "w-label", state.home.label || "Home Base")}
+        <div class="form-grid">${field("Latitude", "w-lat", Number(state.home.lat).toFixed(5))}${field("Longitude", "w-lon", Number(state.home.lon).toFixed(5))}</div>
+        <div class="wiz-actions"><button id="w-geo">Use my location</button><button class="primary" id="w-home-next">Continue</button></div>
+        <p id="w-home-note" class="status-note"></p>`);
+      $("w-geo").onclick = () => navigator.geolocation && navigator.geolocation.getCurrentPosition(
+        (p) => { $("w-lat").value = p.coords.latitude.toFixed(5); $("w-lon").value = p.coords.longitude.toFixed(5); },
+        () => setNote("w-home-note", "Couldn't get your location — enter it manually.", false));
+      $("w-home-next").onclick = async () => {
+        const lat = parseFloat($("w-lat").value), lon = parseFloat($("w-lon").value);
+        if (Number.isNaN(lat) || Number.isNaN(lon)) return setNote("w-home-note", "Enter a valid location.", false);
+        await fetch("/api/home", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lat, lon, label: $("w-label").value.trim() || "Home Base" }) });
+        state.home = { lat, lon, label: $("w-label").value.trim() || "Home Base" };
+        DDMap.setHome(lat, lon, state.home.label, state.cfg.map.range_rings_m || []);
+        remoteIntro();
+      };
+    }
+    // Step 3 — offer remote access
+    function remoteIntro() {
+      step(`<h2>Access from anywhere?</h2>
+        <p class="wiz-lead">Reach this station's dashboard from your phone or a browser at <b>dashboard.dronedingo.com.au</b> — even off-site. The appliance only connects out, so there's no router setup. You can turn this on later instead.</p>
+        <div class="wiz-actions"><button id="w-skip">Skip for now</button><button class="primary" id="w-remote">Set up remote access</button></div>`);
+      $("w-skip").onclick = finish;
+      $("w-remote").onclick = accountStep;
+    }
+    // Step 4 — account
+    function accountStep() {
+      step(`<h2>Your dashboard account</h2>
+        <div class="wiz-choice">
+          <label><input type="radio" name="w-acc" value="store" checked> Use my <b>dronedingo.com.au</b> account</label>
+          <label><input type="radio" name="w-acc" value="login"> I already have a dashboard account</label>
+          <label><input type="radio" name="w-acc" value="signup"> Create a new dashboard account</label>
+        </div>
+        ${field("Email", "w-email", account?.email || "", "email", "you@example.com")}
+        ${field("Password", "w-pass", "", "password")}
+        <div class="wiz-actions"><button id="w-acc-back">Back</button><button class="primary" id="w-acc-next">Continue</button></div>
+        <p id="w-acc-note" class="status-note"></p>`);
+      $("w-acc-back").onclick = remoteIntro;
+      $("w-acc-next").onclick = async () => {
+        const mode = ov.querySelector('input[name="w-acc"]:checked').value;
+        const email = $("w-email").value.trim(), password = $("w-pass").value;
+        if (!email || !password) return setNote("w-acc-note", "Enter your email and password.", false);
+        setNote("w-acc-note", "Signing in…", true);
+        const ep = mode === "signup" ? "/api/remote/signup" : mode === "login" ? "/api/remote/login" : "/api/remote/import";
+        const r = await (await fetch(ep, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })).json();
+        if (!r.ok) return setNote("w-acc-note", r.error || "Sign-in failed.", false);
+        account = { token: r.token, email };
+        subdomainStep();
+      };
+    }
+    // Step 5 — subdomain + claim
+    function subdomainStep() {
+      const suggested = (state.home.label || "station").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 30) || "station";
+      step(`<h2>Choose your web address</h2>
+        <p class="wiz-lead">This station will live at its own address.</p>
+        <label class="field">Address<div class="wiz-sub"><input id="w-sub" type="text" value="${esc(suggested)}"><span>.dashboard.dronedingo.com.au</span></div></label>
+        ${field("Station name", "w-sname", state.home.label || "Home Base")}
+        <div class="wiz-actions"><button id="w-sub-back">Back</button><button class="primary" id="w-claim">Enable remote access</button></div>
+        <p id="w-sub-note" class="status-note"></p>`);
+      const check = async () => {
+        const s = $("w-sub").value.trim().toLowerCase();
+        if (!s) return;
+        const r = await (await fetch("/api/remote/check?s=" + encodeURIComponent(s))).json();
+        setNote("w-sub-note", !r.valid ? "3–40 chars: letters, numbers, hyphens." : r.available ? "✓ available" : "That address is taken.", r.valid && r.available);
+      };
+      $("w-sub").addEventListener("input", () => { $("w-sub").value = $("w-sub").value.toLowerCase().replace(/[^a-z0-9-]/g, ""); });
+      $("w-sub").addEventListener("blur", check);
+      $("w-sub-back").onclick = accountStep;
+      $("w-claim").onclick = async () => {
+        const subdomain = $("w-sub").value.trim().toLowerCase();
+        setNote("w-sub-note", "Enabling…", true);
+        const r = await (await fetch("/api/remote/claim", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: account.token, subdomain, label: $("w-sname").value.trim(), email: account.email }) })).json();
+        if (!r.ok) return setNote("w-sub-note", r.error || "Couldn't enable remote access.", false);
+        successStep(r.url);
+      };
+    }
+    function successStep(url) {
+      step(`<div class="wiz-logo ok">✓</div><h2>You're all set</h2>
+        <p class="wiz-lead">Remote access is on. Reach this station at:<br><a href="${esc(url)}" target="_blank" rel="noopener" style="color:var(--accent);word-break:break-all">${esc(url)}</a><br><br>Sign in with the same account to add more stations.</p>
+        <div class="wiz-actions"><button class="primary" id="w-fin">Finish</button></div>`);
+      $("w-fin").onclick = finish;
+    }
+    function finish() { done(); }
+    welcome();
   }
 
   // Opened from a push alert: ?op=lat,lon&drone=id → centre on the operator and

@@ -21,6 +21,35 @@ function enroll_secret(): string {
     return ($k !== false && $k !== '') ? $k : ENROLL_SECRET_FALLBACK;
 }
 
+// Optional bridge to the dronedingo.com.au CMS so a customer can reuse their
+// store password instead of making a new dashboard account. Set both to enable;
+// leave the secret empty to disable import (fresh signup still works).
+function cms_bridge_secret(): string {
+    $k = getenv('DRONEDINGO_BRIDGE_SECRET');
+    return ($k !== false && $k !== '') ? $k : '';   // set to enable import
+}
+function cms_base_url(): string {
+    $k = getenv('DRONEDINGO_CMS_URL');
+    return ($k !== false && $k !== '') ? rtrim($k, '/') : 'https://dronedingo.com.au';
+}
+/** Ask the CMS whether these customer credentials are valid. yes/no only. */
+function cms_verify_customer(string $email, string $pass): bool {
+    $secret = cms_bridge_secret();
+    if ($secret === '' || !function_exists('curl_init')) return false;
+    $ch = curl_init(cms_base_url() . '/api/v1/verify-customer');
+    curl_setopt_array($ch, [
+        CURLOPT_POST => true, CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10,
+        CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'X-DD-Bridge: ' . $secret],
+        CURLOPT_POSTFIELDS => json_encode(['email' => $email, 'password' => $pass]),
+    ]);
+    $res = curl_exec($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($code !== 200 || !$res) return false;
+    $d = json_decode($res, true);
+    return is_array($d) && !empty($d['ok']);
+}
+
 // SQLite database. On shared hosting everything must live under public_html, so
 // it sits in a `dd-data/` folder inside the docroot that is blocked from the web
 // by its own deny-all .htaccess (and a global rule in the site .htaccess). It is

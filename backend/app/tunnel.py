@@ -152,3 +152,45 @@ def stop() -> None:
 
 def is_running() -> bool:
     return bool(_task and not _task.done())
+
+
+# --- first-boot wizard: dashboard account + station claim (via the relay) ---
+def _relay_json(path: str, payload: dict | None = None, method: str = "POST",
+                timeout: int = 15) -> dict:
+    url = _relay() + path
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, method=method,
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        try:
+            return json.loads(e.read())
+        except Exception:
+            return {"ok": False, "error": f"server error ({e.code})"}
+    except Exception as exc:
+        return {"ok": False, "error": f"could not reach the dashboard service: {exc}"}
+
+
+def account_signup(email: str, password: str) -> dict:
+    return _relay_json("/api/account-signup.php", {"email": email, "password": password})
+
+
+def account_login(email: str, password: str) -> dict:
+    return _relay_json("/api/account-login.php", {"email": email, "password": password})
+
+
+def account_import(email: str, password: str) -> dict:
+    return _relay_json("/api/account-import.php", {"email": email, "password": password})
+
+
+def subdomain_check(sub: str) -> dict:
+    from urllib.parse import quote
+    return _relay_json("/api/subdomain-check.php?s=" + quote(sub), method="GET", timeout=10)
+
+
+def station_claim(token: str, subdomain: str, label: str) -> dict:
+    return _relay_json("/api/station-claim.php", {
+        "node": cfg.get_node_id(), "key": push.ensure_relay_key(),
+        "token": token, "subdomain": subdomain, "label": label})

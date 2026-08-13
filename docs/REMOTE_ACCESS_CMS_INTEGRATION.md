@@ -1,164 +1,83 @@
-# Remote access — CMS (Laravel) integration spec
+# Remote access — accounts & the optional CMS bridge
 
-How the remote-access dashboard links to the **existing** dronedingo.com.au store
-accounts and appliance registry, instead of a separate account system.
+The remote-access dashboard (dashboard.dronedingo.com.au) is **self-contained**:
+it has its own accounts, its own station claiming, and its own portal on the
+relay (PHP + SQLite). It does **not** depend on the CMS. Linking to the store is
+a single **optional** convenience: a customer can reuse their dronedingo.com.au
+password instead of making a new one.
 
-## Roles (federated, each owns one thing)
+## Two ways a customer gets a dashboard account (first-boot wizard)
 
-- **CMS (Laravel)** — the authority for **identity + ownership**: customers
-  (`users.role='customer'`, already there) and appliances (`appliances` table,
-  already there). We add the link `appliance → user + subdomain`, and let the
-  CMS mint short **signed grants** to open a station.
-- **Relay (PHP + SQLite, notify/dashboard cPanel)** — **transport only**: the
-  tunnel request queue and the per-node device key. It does NOT store accounts;
-  it verifies a CMS grant, then proxies to the node over the tunnel.
-- **Appliance** — enrolls with the relay for the tunnel (per-node key), and
-  during first-boot claims itself to a customer account **via the CMS**, proving
-  its node with the `updates.token` it already ships with.
+1. **Create a new dashboard account** — email + password, stored on the relay
+   (`accounts` table). Zero CMS involvement.
+2. **Use my dronedingo.com.au account** — the appliance sends the entered email +
+   password to the relay's `account-import.php`, which asks the CMS "are these
+   valid?" and, if so, creates a matching dashboard account (same email; the
+   password is verified by the CMS and a hash stored on the relay so future
+   dashboard logins work offline of the CMS). This is a one-time **copy**, not a
+   live federation — the dashboard keeps working if the CMS is down or changes.
 
-The appliance's `node_id` is the shared key between CMS and relay. Nothing else
-is duplicated. The relay's standalone `accounts` / `account_nodes` /
-`account-signup|login|station-claim` are **retired** — the CMS replaces them.
+Everything else (station claim, subdomain, portal, tunnel) is unchanged and
+already built on the relay.
 
 ---
 
-## 1. CMS changes (apply in the Laravel app)
+## The ONE CMS change (apply in the Laravel app)
 
-### 1a. Migration — link appliances to customers + a subdomain
+A single read-only endpoint that answers "are these customer credentials valid?"
+Nothing else in the CMS changes; no schema changes.
+
+`routes/web.php`:
 ```php
-Schema::table('appliances', function (Blueprint $t) {
-    $t->foreignId('user_id')->nullable()->after('label')->constrained('users')->nullOnDelete();
-    $t->string('subdomain')->nullable()->unique()->after('user_id');
-    $t->timestamp('claimed_at')->nullable()->after('subdomain');
-});
+Route::post('/api/v1/verify-customer', [PortalController::class,'verifyCustomer'])
+    ->middleware('throttle:20,1');
 ```
 
-### 1b. Models
+`PortalController`:
 ```php
-// User.php
-public function appliances(){ return $this->hasMany(\App\Models\Appliance::class); }
-// Appliance.php  (add to $casts as needed; guarded=[] already allows fill)
-public function user(){ return $this->belongsTo(User::class); }
+// POST /api/v1/verify-customer  { email, password }
+// Header: X-DD-Bridge: <shared secret>   (config: services.dashboard.bridge_secret)
+public function verifyCustomer(Request $r) {
+    if (!hash_equals((string)config('services.dashboard.bridge_secret'),
+                     (string)$r->header('X-DD-Bridge')))
+        return response()->json(['ok'=>false,'error'=>'unauthorised'], 401);
+    $v = $r->validate(['email'=>'required|email','password'=>'required']);
+    $u = \App\Models\User::where('email',$v['email'])->where('role','customer')->first();
+    if (!$u || !\Hash::check($v['password'],$u->password))
+        return response()->json(['ok'=>false], 200);        // do not reveal which
+    return response()->json(['ok'=>true,'name'=>$u->name,'email'=>$u->email]);
+}
 ```
 
-### 1c. Config — the grant secret shared with the relay
 `config/services.php`:
 ```php
-'dashboard' => [
-    'grant_secret' => env('DASHBOARD_GRANT_SECRET'),   // 32+ random bytes, hex
-    'base'         => env('DASHBOARD_BASE', 'dashboard.dronedingo.com.au'),
-],
+'dashboard' => ['bridge_secret' => env('DASHBOARD_BRIDGE_SECRET')],
 ```
-Set the **same** `DASHBOARD_GRANT_SECRET` in the relay (see §2).
+Set the same `DASHBOARD_BRIDGE_SECRET` on the relay (its `_config.php` /
+`DRONEDINGO_BRIDGE_SECRET`). The bridge secret only authorises the yes/no
+credential check — it grants no access to customer data.
 
-### 1d. Routes (`routes/web.php`)
-```php
-// Appliance-facing claim API (bearer = the appliance's updates.token)
-Route::post('/api/v1/stations/claim',   [StationController::class,'claim'])->middleware('throttle:20,1');
-Route::get ('/api/v1/stations/subdomain-available', [StationController::class,'available'])->middleware('throttle:60,1');
-
-// Customer-facing: inside the existing account portal (session guard)
-Route::prefix('account')->group(function () {
-    Route::get('/stations',                 [StationController::class,'mine'])->name('portal.stations');
-    Route::get('/stations/{appliance}/open',[StationController::class,'open'])->name('portal.station.open');
-});
-```
-
-### 1e. `StationController`
-```php
-// bearer updates.token -> Appliance (reuses the update service's scheme)
-private function appliance(Request $r): Appliance {
-    $plain = (string) $r->bearerToken();
-    $a = Appliance::where('token_hash', hash('sha256', $plain))->first();
-    abort_unless($a && $a->active, 401, 'Invalid or revoked appliance token.');
-    return $a;
-}
-
-// POST /api/v1/stations/claim  { email, password, subdomain, label }  (+ bearer token)
-public function claim(Request $r) {
-    $a = $this->appliance($r);
-    $v = $r->validate([
-        'email'=>'required|email','password'=>'required',
-        'subdomain'=>'required|regex:/^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])$/',
-        'label'=>'nullable|max:80',
-    ]);
-    $reserved=['www','dashboard','api','app','notify','admin','mail','relay','update'];
-    if (in_array($v['subdomain'],$reserved,true))
-        return response()->json(['ok'=>false,'error'=>'That subdomain is reserved.'],422);
-    $u = User::where('email',$v['email'])->where('role','customer')->first();
-    if (!$u || !Hash::check($v['password'],$u->password))
-        return response()->json(['ok'=>false,'error'=>'Wrong email or password.'],401);
-    $taken = Appliance::where('subdomain',$v['subdomain'])->where('id','!=',$a->id)->exists();
-    if ($taken) return response()->json(['ok'=>false,'error'=>'That subdomain is taken.'],409);
-    if ($a->user_id && $a->user_id !== $u->id)
-        return response()->json(['ok'=>false,'error'=>'This station is linked to another account.'],409);
-    $a->update(['user_id'=>$u->id,'subdomain'=>$v['subdomain'],
-                'label'=>$v['label']??$a->label,'claimed_at'=>now()]);
-    return response()->json(['ok'=>true,'subdomain'=>$a->subdomain,
-        'url'=>'https://'.$a->subdomain.'.'.config('services.dashboard.base').'/']);
-}
-
-// GET /api/v1/stations/subdomain-available?s=foo
-public function available(Request $r) {
-    $s = strtolower((string)$r->query('s',''));
-    $ok = preg_match('/^[a-z0-9]([a-z0-9-]{1,38}[a-z0-9])$/',$s)
-        && !in_array($s,['www','dashboard','api','app','notify','admin','mail','relay','update'],true);
-    $free = $ok && !Appliance::where('subdomain',$s)->exists();
-    return response()->json(['ok'=>true,'valid'=>(bool)$ok,'available'=>$free]);
-}
-
-// GET /account/stations -> list the customer's stations (portal view)
-public function mine() {
-    $u = auth()->user(); abort_unless($u && $u->role==='customer',403);
-    return view('portal.stations', ['stations'=>$u->appliances()->get()]);
-}
-
-// GET /account/stations/{appliance}/open -> mint a grant + redirect to the station
-public function open(Appliance $appliance) {
-    $u = auth()->user(); abort_unless($u && $u->role==='customer',403);
-    abort_unless($appliance->user_id === $u->id && $appliance->subdomain, 403);
-    $exp = time() + 90;                       // grant is single-use-ish, short lived
-    $msg = $appliance->node_id.'|'.$u->id.'|'.$exp;
-    $sig = hash_hmac('sha256', $msg, config('services.dashboard.grant_secret'));
-    $q = http_build_query(['n'=>$appliance->node_id,'u'=>$u->id,'e'=>$exp,'s'=>$sig]);
-    return redirect()->away('https://'.$appliance->subdomain.'.'.config('services.dashboard.base').'/__grant?'.$q);
-}
-```
-
-### 1f. Portal view `resources/views/portal/stations.blade.php`
-A simple list of `$stations` (label, subdomain, `last_seen_at` for online) with an
-**Open** button linking to `route('portal.station.open',$s)`. Add a "Your
-DroneDingo stations" card/link to the existing `portal.dashboard` view.
+That's the entire CMS surface. If you'd rather not touch the CMS at all yet,
+skip it — option 1 (fresh dashboard account) works with nothing added, and the
+import can be switched on later.
 
 ---
 
-## 2. Relay changes (I build)
+## Relay side (built here)
 
-- `__grant` handler on `*.dashboard`: verify `hash_hmac` with the shared
-  `DASHBOARD_GRANT_SECRET`, check `e` (expiry) and that `n` matches the host's
-  subdomain's node, then set a short **HttpOnly session cookie** and redirect to
-  `/`. Subsequent requests proxy via the tunnel using `n` from the cookie.
-- Subdomain→node: carried in the grant (`n`), so the relay needs no account DB.
-- Retire `account-signup.php`, `account-login.php`, `station-claim.php`,
-  `account-stations.php`, `subdomain-check.php`, and the standalone portal/login;
-  the CMS owns all of that now. Keep `tunnel-poll/respond`, `enroll`, push.
+- `account-import.php` — `{email,password}` → calls the CMS
+  `/api/v1/verify-customer` with the bridge secret; on `ok`, upserts a dashboard
+  `accounts` row (email + a PBKDF2/bcrypt hash of the just-verified password) and
+  returns a session token, exactly like `account-login.php`.
+- Existing `account-signup.php`, `account-login.php`, `station-claim.php`,
+  `subdomain-check.php`, `account-stations.php`, the portal and the tunnel are
+  unchanged.
 
-## 3. Appliance changes (I build)
+## Appliance side (built here)
 
-- First-boot wizard: after admin password + Home Base, a **Remote access** step:
-  "Sign in with your dronedingo.com.au account" (email + password) + choose a
-  subdomain (live availability via the CMS) + station name → the appliance POSTs
-  to the CMS `/api/v1/stations/claim` with its `updates.token` as the bearer →
-  on success, enable remote access (start the tunnel) and store the URL.
-- Settings → System → Remote access shows the linked account + station URL.
-
-## Security notes
-
-- The customer authenticates with their **store** password (bcrypt, via
-  `Hash::check`); the appliance proves its identity with the `updates.token` it
-  already holds — so only the genuine device can claim, and only to an account
-  whose credentials the person at the device knows.
-- The grant is HMAC-signed, node-bound and ~90s TTL; the relay never trusts a
-  subdomain→node mapping it wasn't handed in a valid grant.
-- Multiple stations on one account: a customer claims each unit to the same
-  login; the `/account` portal lists them all.
+First-boot wizard → **Remote access** step:
+1. Choose: *Create account* / *I have a dashboard account* / *Use my
+   dronedingo.com.au account*.
+2. Enter email + password (→ signup / login / import on the relay).
+3. Pick a subdomain (live availability) + station name → claim → enable remote
+   access. Multiple stations = claim each to the same account.
