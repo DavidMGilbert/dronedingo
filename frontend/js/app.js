@@ -460,7 +460,12 @@
       <h3>Demo mode</h3>
       <p style="color:var(--muted);font-size:13px">Generate synthetic drone traffic — including an unidentified contact — to explore the console and test alerts &amp; push notifications without radios attached. Off by default on real installs.</p>
       <label class="check-field"><input type="checkbox" id="demo-toggle"> Enable demo traffic</label>
-      <p id="demo-note" class="status-note"></p>`;
+      <p id="demo-note" class="status-note"></p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:22px 0 16px">
+      <h3>Remote access</h3>
+      <p style="color:var(--muted);font-size:13px">Securely reach this appliance's dashboard from <b>dashboard.dronedingo.com.au</b> when you're off-site. The appliance connects out only — no port forwarding, works behind DHCP/CGNAT — and authenticates with its own key. <b>Off by default.</b></p>
+      <label class="check-field"><input type="checkbox" id="remote-toggle"> Enable secure remote access</label>
+      <p id="remote-note" class="status-note"></p>`;
     const load = async () => {
       const s = await (await fetch("/api/system/status")).json();
       const bar = (label, pct, val) => `<div class="health-row"><strong>${label}</strong><progress value="${Math.round(pct || 0)}" max="100"></progress><span>${val}</span></div>`;
@@ -494,6 +499,17 @@
       const r = await (await fetch("/api/demo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: on }) })).json();
       e.target.checked = !!r.enabled;
       setNote("demo-note", r.enabled ? "Demo traffic on — synthetic contacts will appear." : "Demo traffic off.", true);
+    };
+    // Remote access
+    try { $("remote-toggle").checked = !!(await (await fetch("/api/remote")).json()).enabled; } catch (_) {}
+    $("remote-toggle").onchange = async (e) => {
+      const on = e.target.checked;
+      setNote("remote-note", on ? "Enabling remote access…" : "Disabling…", true);
+      const r = await (await fetch("/api/remote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: on }) })).json();
+      e.target.checked = !!r.enabled;
+      setNote("remote-note", r.enabled
+        ? "Remote access on — reach this appliance at dashboard.dronedingo.com.au."
+        : "Remote access off.", true);
     };
   }
 

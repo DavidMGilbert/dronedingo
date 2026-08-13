@@ -18,7 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import net          # noqa: F401 — pins the certifi CA bundle for HTTPS
 from . import config as cfg
-from . import auth, system, updater, push
+from . import auth, system, updater, push, tunnel
 from .db import DB
 from .hub import Hub
 from .manager import Manager
@@ -64,6 +64,7 @@ async def lifespan(app: FastAPI):
     push.ensure_keys()          # generate the VAPID key pair on first run
     push.provision_and_start()  # mint unique id/key, enroll, then collect regs
     await manager.start()
+    tunnel.start()              # remote-access tunnel (no-op unless enabled)
     prune_task = asyncio.create_task(_prune_loop())
     log.info("DroneDingo online — UI at http://%s:%s",
              cfg.load()["server"]["host"], cfg.load()["server"]["port"])
@@ -427,6 +428,24 @@ async def api_demo_set(payload: dict):
     else:
         manager.stop_source("simulator")
     return {"ok": True, "enabled": manager.source_running("simulator")}
+
+
+# ----------------------------- Remote access -------------------------------
+@app.get("/api/remote")
+async def api_remote_status():
+    return {"enabled": tunnel.enabled(), "running": tunnel.is_running()}
+
+
+@app.post("/api/remote")
+async def api_remote_set(payload: dict):
+    """Enable/disable secure remote dashboard access (off by default)."""
+    on = bool(payload.get("enabled"))
+    cfg.update_state(remote_access_enabled=on)
+    if on:
+        tunnel.start()
+    else:
+        tunnel.stop()
+    return {"ok": True, "enabled": on, "running": tunnel.is_running()}
 
 
 # ----------------------------- Updates -------------------------------------

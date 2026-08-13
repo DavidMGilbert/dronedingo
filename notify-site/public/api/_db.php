@@ -23,7 +23,30 @@ function db(): PDO {
         key_hash TEXT NOT NULL,
         created INTEGER NOT NULL,
         last_seen INTEGER NOT NULL)');
+    // Remote-access tunnel queue: one row per proxied browser request. The
+    // browser side inserts a request and waits; the appliance long-polls, runs
+    // it locally and writes the response back. Store-and-forward, like push —
+    // no persistent connection, so it runs on shared PHP hosting.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS tunnel (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node TEXT NOT NULL,
+        method TEXT NOT NULL,
+        path TEXT NOT NULL,
+        req_headers TEXT,
+        req_body TEXT,
+        claimed INTEGER,
+        status INTEGER,
+        res_headers TEXT,
+        res_body TEXT,
+        created INTEGER NOT NULL,
+        done INTEGER)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_tunnel_node ON tunnel(node, status)');
     return $pdo;
+}
+
+// Drop tunnel rows older than 60s so a stalled request never lingers.
+function tunnel_gc(PDO $pdo): void {
+    $pdo->prepare('DELETE FROM tunnel WHERE created < ?')->execute([time() - 60]);
 }
 
 /**

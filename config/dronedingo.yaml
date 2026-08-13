@@ -103,6 +103,13 @@ push:
   # bearing and operator coordinates in its text).
   portal_url: null
 
+remote_access:
+  # Secure remote dashboard access (dashboard.dronedingo.com.au). The appliance
+  # makes an OUTBOUND connection only — no port forwarding, works behind DHCP /
+  # CGNAT — and authenticates with its own enrolled per-node key. OFF by default
+  # for privacy; enable per appliance from Settings → System → "Remote access".
+  enabled: false
+
 updates:
   # Production appliances update from the website (see docs/UPDATE_PROTOCOL.md).
   # Set check_url to switch from the git-checkout dev flow to signed releases.
