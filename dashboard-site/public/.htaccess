@@ -1,0 +1,16 @@
+# dashboard.dronedingo.com.au — front controller.
+# Real files (index.php, api/*.php) serve directly; every other path is routed
+# to index.php, which proxies it to the station over the tunnel. This is what
+# lets the appliance's own root-absolute URLs (/api, /css, /js, /tiles) work
+# unchanged under each <station>.dashboard subdomain.
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]
+
+# The appliance UI must always revalidate so updates land immediately.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(php)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>

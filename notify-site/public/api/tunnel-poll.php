@@ -22,29 +22,28 @@ tunnel_gc($pdo);
 // Hold the connection up to ~25s, checking a few times a second. Kept under the
 // typical 30s shared-host limit so the request completes cleanly, then the
 // appliance immediately re-polls.
+// Short autocommit statements (no long-held transaction) keep the write lock
+// brief so the dashboard's read loop and this poll don't deadlock the DB.
 $deadline = time() + 25;
+$sel = $pdo->prepare(
+    'SELECT id, method, path, req_headers, req_body FROM tunnel
+     WHERE node = ? AND status IS NULL AND claimed IS NULL ORDER BY id LIMIT 20');
+$upd = $pdo->prepare('UPDATE tunnel SET claimed = ? WHERE id = ? AND claimed IS NULL');
 do {
-    $pdo->beginTransaction();
-    $st = $pdo->prepare(
-        'SELECT id, method, path, req_headers, req_body FROM tunnel
-         WHERE node = ? AND status IS NULL AND claimed IS NULL
-         ORDER BY id LIMIT 20');
-    $st->execute([$node]);
-    $rows = $st->fetchAll(PDO::FETCH_ASSOC);
-    if ($rows) {
-        $ids = array_column($rows, 'id');
-        $in = implode(',', array_fill(0, count($ids), '?'));
-        $pdo->prepare("UPDATE tunnel SET claimed = ? WHERE id IN ($in)")
-            ->execute(array_merge([time()], $ids));
-        $pdo->commit();
-        $reqs = array_map(fn($r) => [
+    $sel->execute([$node]);
+    $rows = $sel->fetchAll(PDO::FETCH_ASSOC);
+    $reqs = [];
+    foreach ($rows as $r) {
+        // Claim atomically; skip if another poll grabbed it first.
+        $upd->execute([time(), (int)$r['id']]);
+        if ($upd->rowCount() === 0) continue;
+        $reqs[] = [
             'id' => (int)$r['id'], 'method' => $r['method'], 'path' => $r['path'],
             'headers' => json_decode($r['req_headers'] ?: '{}', true),
-            'body' => $r['req_body'],       // base64 or null
-        ], $rows);
-        out(['ok' => true, 'requests' => $reqs]);
+            'body' => $r['req_body'],
+        ];
     }
-    $pdo->commit();
+    if ($reqs) out(['ok' => true, 'requests' => $reqs]);
     usleep(300000);   // 300ms
 } while (time() < $deadline);
 

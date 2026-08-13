@@ -9,6 +9,14 @@ function db(): PDO {
     }
     $pdo = new PDO('sqlite:' . $path);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    // Concurrency: push polling, the tunnel and the dashboard all hit this DB at
+    // once. WAL lets many readers run alongside a writer (needed for the tunnel's
+    // tight poll loops on Linux hosts); the busy timeout retries brief write
+    // contention, and the tunnel endpoints use short autocommit statements so no
+    // lock is held long. (WAL's cross-process reads are flaky only under Windows
+    // `php -S`, which isn't a deployment target.)
+    $pdo->exec('PRAGMA busy_timeout=8000');
+    @$pdo->exec('PRAGMA journal_mode=WAL');
     $pdo->exec('CREATE TABLE IF NOT EXISTS pending (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         node TEXT NOT NULL,
@@ -97,6 +105,59 @@ function tunnel_gc(PDO $pdo): void {
 }
 
 /**
+ * Proxy the CURRENT browser request to a station over the tunnel: queue it, wait
+ * for the appliance to run it and post the response, then emit that response.
+ * Ends the request. Shared by the dashboard front controller and the test proxy.
+ */
+function tunnel_serve(PDO $pdo, string $node): void {
+    $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+    $path = $_GET['__path'] ?? ($_SERVER['REQUEST_URI'] ?? '/');
+    $path = preg_replace('/([?&])__(node|path)=[^&]*/', '$1', $path);
+    $path = rtrim(preg_replace('/[?&]$/', '', $path), '?&');
+    if ($path === '' || $path[0] !== '/') $path = '/' . $path;
+
+    $fwd = [];
+    foreach (($_SERVER ?? []) as $k => $v) {
+        if (strpos($k, 'HTTP_') !== 0) continue;
+        $name = str_replace(' ', '-', ucwords(strtolower(str_replace('_', ' ', substr($k, 5)))));
+        if (in_array(strtolower($name), ['host', 'x-dd-node', 'connection', 'content-length', 'x-dd-tunnel-auth'])) continue;
+        $fwd[$name] = $v;
+    }
+    if (!empty($_SERVER['CONTENT_TYPE'])) $fwd['Content-Type'] = $_SERVER['CONTENT_TYPE'];
+    $body = file_get_contents('php://input');
+
+    tunnel_gc($pdo);
+    $pdo->prepare('INSERT INTO tunnel (node, method, path, req_headers, req_body, created)
+                   VALUES (?,?,?,?,?,?)')
+        ->execute([$node, $method, $path, json_encode($fwd),
+                   $body === '' ? null : base64_encode($body), time()]);
+    $id = (int)$pdo->lastInsertId();
+
+    $sel = $pdo->prepare('SELECT status, res_headers, res_body FROM tunnel WHERE id = ?');
+    $deadline = time() + 30;
+    do {
+        $sel->execute([$id]);
+        $row = $sel->fetch(PDO::FETCH_ASSOC);
+        if ($row && $row['status'] !== null) {
+            http_response_code((int)$row['status']);
+            foreach (json_decode($row['res_headers'] ?: '{}', true) as $hk => $hv) {
+                if (in_array(strtolower($hk), ['transfer-encoding', 'connection', 'content-length'])) continue;
+                header($hk . ': ' . $hv, true);
+            }
+            echo $row['res_body'] ? base64_decode($row['res_body']) : '';
+            $pdo->prepare('DELETE FROM tunnel WHERE id = ?')->execute([$id]);
+            exit;
+        }
+        usleep(250000);
+    } while (time() < $deadline);
+
+    http_response_code(504);
+    header('Content-Type: text/plain');
+    echo "The station is not responding (offline or remote access is off).";
+    exit;
+}
+
+/**
  * Authorise an appliance for a node. Each appliance may only touch its own
  * mailbox: the presented key must match the hash stored at enrollment.
  *
@@ -113,8 +174,10 @@ function node_authorized(PDO $pdo, string $node, string $key): bool {
     $hash = $st->fetchColumn();
     if ($hash !== false) {
         if (password_verify($key, $hash)) {
-            $pdo->prepare('UPDATE appliances SET last_seen = ? WHERE node = ?')
-                ->execute([time(), $node]);
+            // Touch last_seen at most once a minute — the tunnel polls every few
+            // hundred ms, and a write per poll would thrash the DB lock.
+            $pdo->prepare('UPDATE appliances SET last_seen = ? WHERE node = ? AND last_seen < ?')
+                ->execute([time(), $node, time() - 60]);
             return true;
         }
         return false;
