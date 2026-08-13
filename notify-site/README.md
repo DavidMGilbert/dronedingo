@@ -15,11 +15,14 @@ loads this page (HTTPS), subscribes using the **appliance's** VAPID public key
 appliance collects it.
 
 ```
+Appliance ──first boot──▶ /api/enroll.php   (claims its unique node id +
+          registers a HASH of its own unique key; auth: enroll secret)
+
 Phone ──scan QR──▶ notify.dronedingo.com.au  (this site, HTTPS PWA)
       subscribe with appliance's VAPID pubkey (from the QR)
       POST subscription ─▶ /api/register.php   (parked in a mailbox)
 
-Appliance ──poll (auth)──▶ /api/pending.php ─▶ takes its subscriptions
+Appliance ──poll (its own key)──▶ /api/pending.php ─▶ takes its subscriptions
           ──▶ /api/ack.php  (clears them)
           ──▶ sends encrypted Web Push DIRECTLY to the phone (VAPID)
 
@@ -36,21 +39,36 @@ Appliance ──poll (auth)──▶ /api/pending.php ─▶ takes its subscript
 
 1. Point the `notify.dronedingo.com.au` docroot at `public/`.
 2. Ensure PHP can write a data dir one level **above** the docroot (the SQLite
-   mailbox lives at `../notify-data/notify.sqlite`, outside the web root).
-3. Set the shared secret the appliances use to poll — either edit
-   `public/api/_config.php` or set the env var `DRONEDINGO_RELAY_KEY`.
+   mailbox + `appliances` table live at `../notify-data/notify.sqlite`, outside
+   the web root). The tables auto-create on first request.
+3. Set the **enrollment secret** — either edit `ENROLL_SECRET_FALLBACK` in
+   `public/api/_config.php` or set the env var `DRONEDINGO_ENROLL_SECRET`. This
+   is the ONE shared secret; it only authorises an appliance to *claim a node*,
+   never to read any node's data.
 4. HTTPS is mandatory (Let's Encrypt). Web Push will not work otherwise.
-5. Copy your brand icons into `public/icons/` (mark-dark.png, icon-192.png,
-   icon-512.png, favicon-64.png) — or they're already included here.
+5. Brand icons are already in `public/icons/`.
 
-On each appliance set, in `config/dronedingo.yaml`:
+Appliances need no config editing — each one **self-enrolls** on first boot,
+minting its own unique node id + key. Just provision the matching enroll secret
+at install:
 
-```yaml
-push:
-  public_url: "https://notify.dronedingo.com.au"   # where the PWA lives
-  relay_url:  "https://notify.dronedingo.com.au"   # where the appliance polls
-  relay_key:  "the-same-shared-secret"             # matches this site
+```bash
+sudo DRONEDINGO_ENROLL_SECRET='<same value as this site>' bash deploy/install.sh
 ```
+
+## Multi-tenant model
+
+- Each appliance holds a **unique key**; the relay stores only its **hash**
+  (`appliances.key_hash`). `pending.php` / `ack.php` authorise **per node**, so
+  one appliance's key only ever unlocks its own mailbox.
+- `enroll.php` is **claim-once**: once a node is enrolled, a different key is
+  rejected (409), so nobody can hijack another appliance's node id. Re-enrolling
+  with the same key is idempotent (survives a reinstall that kept `state.json`).
+- The **enroll secret** only permits claiming/refreshing a node — it grants no
+  access to parked registrations. Far less sensitive than a per-node key.
+- Legacy: a fleet-wide `DRONEDINGO_RELAY_KEY` (if set) is still accepted for
+  nodes that haven't enrolled yet, easing rollout. Leave it empty to require
+  enrollment for everyone.
 
 ## Security notes
 
@@ -58,7 +76,3 @@ push:
   only *accepted* once the appliance validates the one-time registration token
   it minted — junk posts are discarded on the appliance and never become live
   subscriptions.
-- `pending.php` / `ack.php` require the shared `relay_key`; without it nobody can
-  read parked subscriptions.
-- Start with one fleet-wide `relay_key`; move to per-node keys when you add
-  provisioning. Rotate by changing it here and on the appliances.
