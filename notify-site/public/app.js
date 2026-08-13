@@ -10,8 +10,10 @@
   let token = p.get("t") || p.get("token") || "";
   let key = p.get("k") || "";      // appliance VAPID public key (base64url)
 
-  // iOS drops the query string when the PWA is launched from the Home Screen,
-  // so stash the registration details on first load and restore them after.
+  // On iOS the installed PWA relaunches at the manifest start_url (now made to
+  // carry node/token/key via manifest.php) — but storage doesn't cross the
+  // Safari→PWA boundary. Keep a same-context localStorage fallback anyway (helps
+  // Android and plain reloads); the dynamic manifest is the real fix.
   try {
     if (node && token && key) {
       localStorage.setItem("dd-reg", JSON.stringify({ node, token, key }));
@@ -77,7 +79,7 @@
       const perm = await withTimeout(Notification.requestPermission(), 60000, "permission prompt didn't return");
       if (perm !== "granted") { fail("Notifications were not allowed for this site."); return; }
 
-      step("Registering… (v2)");
+      step("Registering… (v3)");
       const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
       await waitForActive(reg, 8000);        // best-effort; don't fail if slow
 

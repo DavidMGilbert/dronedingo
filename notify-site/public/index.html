@@ -4,7 +4,19 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>DroneDingo Alerts</title>
-  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="manifest" id="dd-manifest" href="/manifest.webmanifest" />
+  <script>
+    // Point the manifest at the per-registration one so "Add to Home Screen"
+    // bakes node/token/key into start_url — otherwise the installed app relaunches
+    // at "/" and loses them (query string AND storage don't survive the install
+    // boundary on iOS). Runs at parse time, before the user can install.
+    (function () {
+      var q = location.search;
+      if (/[?&](t|token)=/.test(q) && /[?&]node=/.test(q)) {
+        document.getElementById("dd-manifest").href = "/manifest.php" + q;
+      }
+    })();
+  </script>
   <link rel="icon" type="image/png" href="/icons/favicon-64.png" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <meta name="theme-color" content="#0c2224" />
@@ -46,6 +58,6 @@
     <div class="status" id="status"></div>
     <p class="hint" id="hint"></p>
   </div>
-  <script src="/app.js?v=2"></script>
+  <script src="/app.js?v=3"></script>
 </body>
 </html>
