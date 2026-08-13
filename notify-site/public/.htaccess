@@ -1,8 +1,12 @@
 # notify.dronedingo.com.au — Apache config.
 # The service worker must control the whole origin, so keep it at the root.
 
+# Serve the PHP registration page for "/". It injects the per-registration
+# manifest link server-side (see index.php) so Add-to-Home-Screen keeps node/t/k.
+DirectoryIndex index.php index.html
+
 # Never cache the service worker or the app shell (so updates land immediately).
-<FilesMatch "^(sw\.js|app\.js|index\.html)$">
+<FilesMatch "^(sw\.js|app\.js|index\.php|index\.html)$">
   Header set Cache-Control "no-cache, must-revalidate"
 </FilesMatch>
 

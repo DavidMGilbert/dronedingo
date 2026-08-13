@@ -5,10 +5,14 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  // Prefer the params injected into the page server-side (index.php) — most
+  // robust across the install/relaunch boundary — then the query string, then a
+  // same-context localStorage fallback.
+  const reg = window.__DDREG || {};
   const p = new URLSearchParams(location.search);
-  let node = p.get("node") || "";
-  let token = p.get("t") || p.get("token") || "";
-  let key = p.get("k") || "";      // appliance VAPID public key (base64url)
+  let node = reg.node || p.get("node") || "";
+  let token = reg.t || p.get("t") || p.get("token") || "";
+  let key = reg.k || p.get("k") || "";      // appliance VAPID public key (base64url)
 
   // On iOS the installed PWA relaunches at the manifest start_url (now made to
   // carry node/token/key via manifest.php) — but storage doesn't cross the
@@ -79,7 +83,7 @@
       const perm = await withTimeout(Notification.requestPermission(), 60000, "permission prompt didn't return");
       if (perm !== "granted") { fail("Notifications were not allowed for this site."); return; }
 
-      step("Registering… (v3)");
+      step("Registering… (v4)");
       const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
       await waitForActive(reg, 8000);        // best-effort; don't fail if slow
 

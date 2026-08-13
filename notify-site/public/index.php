@@ -1,25 +1,40 @@
-<!doctype html>
+<?php
+// Registration page, served through PHP so the manifest <link> carries this
+// registration's params in the FIRST HTML iOS parses. iOS captures start_url
+// from the manifest present at "Add to Home Screen" time and ignores later JS
+// edits to the link href, so the params must be here server-side — not swapped
+// in by script. The installed app then relaunches at start_url WITH node/t/k.
+function dd_clean(string $v): string {
+    return preg_replace('/[^A-Za-z0-9_.\-]/', '', $v);
+}
+$node = dd_clean((string)($_GET['node'] ?? ''));
+$t    = dd_clean((string)($_GET['t'] ?? ($_GET['token'] ?? '')));
+$k    = dd_clean((string)($_GET['k'] ?? ''));
+$has_reg = ($node !== '' && $t !== '' && $k !== '');
+
+$manifest = '/manifest.webmanifest';
+if ($has_reg) {
+    $manifest = '/manifest.php?node=' . rawurlencode($node)
+              . '&t=' . rawurlencode($t) . '&k=' . rawurlencode($k);
+}
+?><!doctype html>
 <html lang="en-AU">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>DroneDingo Alerts</title>
-  <link rel="manifest" id="dd-manifest" href="/manifest.webmanifest" />
-  <script>
-    // Point the manifest at the per-registration one so "Add to Home Screen"
-    // bakes node/token/key into start_url — otherwise the installed app relaunches
-    // at "/" and loses them (query string AND storage don't survive the install
-    // boundary on iOS). Runs at parse time, before the user can install.
-    (function () {
-      var q = location.search;
-      if (/[?&](t|token)=/.test(q) && /[?&]node=/.test(q)) {
-        document.getElementById("dd-manifest").href = "/manifest.php" + q;
-      }
-    })();
-  </script>
+  <link rel="manifest" href="<?= htmlspecialchars($manifest, ENT_QUOTES) ?>" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="DroneDingo" />
   <link rel="icon" type="image/png" href="/icons/favicon-64.png" />
   <link rel="apple-touch-icon" href="/icons/icon-192.png" />
   <meta name="theme-color" content="#0c2224" />
+  <script>
+    // Registration details injected server-side, so the app never depends on the
+    // query string surviving the install/relaunch. (It also will, via start_url.)
+    window.__DDREG = <?= $has_reg ? json_encode(['node' => $node, 't' => $t, 'k' => $k]) : 'null' ?>;
+  </script>
   <style>
     @font-face{font-family:"Barlow";font-weight:400;font-display:swap;src:url("/icons/barlow-400.woff2") format("woff2")}
     @font-face{font-family:"Barlow";font-weight:600;font-display:swap;src:url("/icons/barlow-600.woff2") format("woff2")}
@@ -58,6 +73,6 @@
     <div class="status" id="status"></div>
     <p class="hint" id="hint"></p>
   </div>
-  <script src="/app.js?v=3"></script>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>
