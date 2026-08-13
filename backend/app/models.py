@@ -37,5 +37,11 @@ class Detection:
     def has_position(self) -> bool:
         return self.drone_lat is not None and self.drone_lon is not None
 
+    @property
+    def simulated(self) -> bool:
+        """True for synthetic demo-mode traffic. These are shown live and can
+        drive test alerts, but are never written to the evidence DB."""
+        return bool(self.raw.get("sim"))
+
     def to_dict(self) -> dict:
         return asdict(self)

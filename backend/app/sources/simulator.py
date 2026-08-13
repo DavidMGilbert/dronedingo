@@ -92,7 +92,8 @@ class Simulator(Source):
     def run(self) -> None:
         drones, node_id, home = self._build()
         last = time.time()
-        # small warm-up so the DB has a little history for playback immediately
+        # Emits live contacts only — these are flagged simulated (raw.sim) and are
+        # never persisted, so demo mode leaves no history/log residue.
         while not self._stop.is_set():
             now = time.time()
             dt = min(2.0, now - last)

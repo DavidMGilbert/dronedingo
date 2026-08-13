@@ -86,6 +86,13 @@ class Manager:
 
     async def start(self) -> None:
         self.loop = asyncio.get_running_loop()
+        # Clean out any demo rows written before demo traffic became non-persistent.
+        try:
+            purged = await self.db.purge_simulated()
+            if purged:
+                log.info("purged %d stale demo detection(s) from the DB", purged)
+        except Exception:
+            log.warning("could not purge stale demo rows", exc_info=True)
         conf = cfg.load()
         registry = _load_registry()
         for name, klass in registry.items():
@@ -107,7 +114,10 @@ class Manager:
                 if time.time() - home_checked > 5:  # pick up UI home changes
                     home = cfg.get_home()
                     home_checked = time.time()
-                await self.db.insert(det)
+                # Demo-mode traffic is shown live and can drive test alerts, but
+                # is never written to the evidence DB (keeps history/logs clean).
+                if not det.simulated:
+                    await self.db.insert(det)
                 msg = det.to_dict()
                 msg["kind"] = "detection"
                 # annotate with range/bearing from Home Base for the UI

@@ -115,6 +115,16 @@ class DB:
         sessions.sort(key=lambda x: x["last_seen"], reverse=True)
         return sessions[:limit]
 
+    async def purge_simulated(self) -> int:
+        """Delete any synthetic demo-mode rows. Demo traffic no longer persists,
+        so this is a one-time cleanup of rows written before that change. Real
+        captures never carry a "(sim)" source, so this can't touch evidence."""
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "DELETE FROM detections WHERE source LIKE '%(sim)%'")
+            await db.commit()
+            return cur.rowcount
+
     async def prune(self, retention_days: int) -> int:
         cutoff = time.time() - retention_days * 86400
         async with aiosqlite.connect(self.path) as db:
