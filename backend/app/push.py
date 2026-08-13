@@ -43,6 +43,36 @@ log = logging.getLogger("dronedingo")
 # takes it again. A plain Lock would deadlock.
 _lock = threading.RLock()
 
+# Built-in registration relay — firmware-internal, deliberately NOT surfaced in
+# the user-editable config (the URL and the polling method are proprietary). It
+# gives every appliance an https:// QR registration path with no per-site
+# DNS/SSL. The shared key is provisioned out-of-band (env / install / build),
+# never written to config/dronedingo.yaml.
+DEFAULT_RELAY_URL = "https://notify.dronedingo.com.au"
+DEFAULT_RELAY_KEY = ""        # set at build/provisioning; or DRONEDINGO_RELAY_KEY
+
+
+def _relay() -> tuple[str, str]:
+    """(base_url, shared_key) for the registration relay. Resolved from firmware
+    defaults + out-of-band provisioning only — not from user-facing config."""
+    p = cfg.load().get("push") or {}
+    base = (p.get("relay_url") or DEFAULT_RELAY_URL).rstrip("/")
+    key = (os.environ.get("DRONEDINGO_RELAY_KEY")
+           or (cfg.get_state().get("relay_key") if hasattr(cfg, "get_state") else "")
+           or p.get("relay_key") or DEFAULT_RELAY_KEY)
+    return base, (key or "")
+
+
+def registration_base() -> str:
+    """The https origin a phone's QR points at (the relay, unless self-hosting)."""
+    return _relay()[0]
+
+
+def relay_configured() -> bool:
+    """True once the shared key is provisioned, so the appliance can collect
+    parked registrations. The QR is valid without it; collection needs it."""
+    return bool(_relay()[1])
+
 
 # --------------------------------------------------------------------------
 # base64url helpers (unpadded, per JOSE)
@@ -298,14 +328,9 @@ def enabled() -> bool:
 
 
 # --------------------------------------------------------------------------
-# relay poller — collect subscriptions registered via notify.dronedingo.com.au
+# relay poller — collect parked registrations, then push directly.
+# (Relay URL/key resolution lives with the firmware constants near the top.)
 # --------------------------------------------------------------------------
-def _relay() -> tuple[str, str]:
-    p = cfg.load().get("push") or {}
-    base = (p.get("relay_url") or p.get("public_url") or "").rstrip("/")
-    return base, (p.get("relay_key") or "")
-
-
 def _relay_post(path: str, payload: dict, timeout: int = 15) -> dict:
     base, _ = _relay()
     req = urllib.request.Request(base + path, method="POST",
@@ -358,19 +383,38 @@ def poll_relay_once() -> int:
     return len(welcomed)
 
 
+_poller_stop: threading.Event | None = None
+
+
 def start_poller() -> None:
+    """Start the relay poller if the shared key is provisioned. Idempotent —
+    a running poller is stopped first, so this doubles as a restart when the
+    key is set from provisioning after boot."""
+    global _poller_stop
+    if _poller_stop is not None:          # stop any existing loop first
+        _poller_stop.set()
+        _poller_stop = None
+
     base, key = _relay()
     if not (base and key):
-        log.info("DroneDingo Push relay not configured; devices register locally only")
+        log.info("DroneDingo Push relay key not provisioned; devices can register "
+                 "but won't be collected until it is set")
         return
 
+    stop = threading.Event()
+    _poller_stop = stop
+
     def _loop():
-        while True:
+        while not stop.is_set():
             try:
                 poll_relay_once()
             except Exception as exc:
                 log.warning("relay poller error: %s", exc)
-            time.sleep(20)
+            stop.wait(20)
 
     threading.Thread(target=_loop, name="push-relay-poller", daemon=True).start()
-    log.info("DroneDingo Push relay poller started -> %s", base)
+    log.info("DroneDingo Push relay poller started")
+
+
+# Provisioning after boot (env/state) should call this to pick up the key live.
+restart_poller = start_poller

@@ -317,8 +317,11 @@ async def api_push_pubkey():
 @app.get("/api/push/status")
 async def api_push_status():
     p = cfg.load().get("push") or {}
+    # public_url: the https origin the phone's QR points at. Defaults to the
+    # built-in relay (firmware) so registration works with no per-site SSL.
     return {"enabled": push.enabled(), "devices": push.subscription_count(),
-            "public_url": p.get("public_url") or p.get("relay_url"),
+            "public_url": p.get("public_url") or push.registration_base(),
+            "relay_ready": push.relay_configured(),
             "node": cfg.get_node_id(), "pubkey": push.public_key_b64()}
 
 
@@ -406,6 +409,50 @@ async def api_ethernet(payload: dict):
 @app.post("/api/system/reboot")
 async def api_system_reboot():
     return await asyncio.to_thread(system.reboot)
+
+
+@app.post("/api/system/restart")
+async def api_system_restart():
+    """Restart just the DroneDingo service (applies config changes without a
+    full reboot). The HTTP response is sent before the service goes down."""
+    return await asyncio.to_thread(system.restart_service)
+
+
+# ----------------------------- Demo mode -----------------------------------
+@app.get("/api/demo")
+async def api_demo_status():
+    return {"enabled": manager.source_running("simulator")}
+
+
+@app.post("/api/demo")
+async def api_demo_set(payload: dict):
+    """Turn the synthetic-traffic simulator on/off live (Settings → System)."""
+    on = bool(payload.get("enabled"))
+    cfg.set_source_enabled("simulator", on)
+    if on:
+        manager.start_source("simulator")
+    else:
+        manager.stop_source("simulator")
+    return {"ok": True, "enabled": manager.source_running("simulator")}
+
+
+# ----------------------------- Config editor -------------------------------
+@app.get("/api/config/raw")
+async def api_config_raw():
+    return {"text": cfg.read_yaml_text()}
+
+
+@app.post("/api/config/raw")
+async def api_config_raw_save(payload: dict):
+    """Validate + save the raw dronedingo.yaml (backs up to .yaml.bak first).
+    Alert/behaviour changes apply immediately; source/server changes need the
+    Restart button."""
+    try:
+        cfg.write_yaml_text(payload.get("text", ""))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    manager.reload_alerter()
+    return {"ok": True, "message": "Saved. Restart to apply source/server changes."}
 
 
 # ----------------------------- Updates -------------------------------------

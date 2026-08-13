@@ -72,6 +72,13 @@ case "$verb" in
     echo "Rebooting."
     ;;
 
+  restart)
+    # Restart just the app service (applies config changes). Detached so the
+    # HTTP response flushes before the service is torn down.
+    ( sleep 1; systemctl restart dronedingo ) >/dev/null 2>&1 &
+    echo "Restarting DroneDingo."
+    ;;
+
   *)
     echo "unknown verb: $verb" >&2
     exit 2

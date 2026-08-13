@@ -51,6 +51,33 @@ class Manager:
         """Rebuild the alerter after a settings change from the UI."""
         self.alerter = Alerter(cfg.load())
 
+    def source_running(self, name: str) -> bool:
+        return any(getattr(s, "name", None) == name for s in self.sources)
+
+    def start_source(self, name: str) -> bool:
+        """Start one capture source live (e.g. the simulator for Demo mode)."""
+        if self.loop is None or self.source_running(name):
+            return self.source_running(name)
+        klass = _load_registry().get(name)
+        if klass is None:
+            return False
+        src = klass(cfg.load(), self._emit)
+        src.start()
+        self.sources.append(src)
+        log.info("source started (live): %s", name)
+        return True
+
+    def stop_source(self, name: str) -> bool:
+        """Stop and remove one running capture source live."""
+        stopped = False
+        for src in list(self.sources):
+            if getattr(src, "name", None) == name:
+                src.stop()
+                self.sources.remove(src)
+                stopped = True
+                log.info("source stopped (live): %s", name)
+        return stopped
+
     def _emit(self, det: Detection) -> None:
         """Thread-safe hand-off from a source thread to the event loop."""
         if self.loop is None:

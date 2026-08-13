@@ -287,3 +287,10 @@ def reboot() -> dict:
     res = _helper("reboot", timeout=10)
     res.setdefault("message", "Rebooting…" if res.get("ok") else "Reboot failed.")
     return res
+
+
+def restart_service() -> dict:
+    res = _helper("restart", timeout=15)
+    res.setdefault("message", "Restarting the service…" if res.get("ok")
+                   else "Restart failed.")
+    return res

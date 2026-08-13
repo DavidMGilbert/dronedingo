@@ -124,3 +124,31 @@ def set_source_enabled(name: str, enabled: bool) -> None:
         se[name] = bool(enabled)
         with open(STATE_PATH, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
+
+
+# --------------------------------------------------------------------------
+# raw YAML editing (Settings → Config)
+# --------------------------------------------------------------------------
+def read_yaml_text() -> str:
+    """The exact contents of config/dronedingo.yaml, for the Config editor."""
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def write_yaml_text(text: str) -> None:
+    """Validate that ``text`` is parseable YAML with a top-level mapping, back up
+    the current file to .bak, then write it. Raises ValueError on bad YAML so the
+    editor can show the parser error and nothing is overwritten with junk."""
+    try:
+        parsed = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"YAML error: {exc}")
+    if not isinstance(parsed, dict):
+        raise ValueError("Top level must be a mapping (key: value pairs).")
+    with _lock:
+        if CONFIG_PATH.exists():
+            backup = CONFIG_PATH.with_suffix(".yaml.bak")
+            backup.write_text(CONFIG_PATH.read_text(encoding="utf-8"),
+                              encoding="utf-8")
+        # Normalise line endings; keep the author's text otherwise verbatim.
+        CONFIG_PATH.write_text(text.replace("\r\n", "\n"), encoding="utf-8")

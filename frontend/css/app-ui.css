@@ -156,3 +156,34 @@
 .throttle-note.ok { background: color-mix(in srgb, var(--vfd) 14%, transparent); }
 .throttle-note.warn { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--text); }
 .throttle-note.warn b { color: var(--danger); }
+
+/* ---- Config editor (Settings → Config): raw YAML with syntax highlight ----
+   A transparent <textarea> is layered over a highlighted <pre>; both share the
+   exact same font/padding/scroll so the caret lands on the coloured text. */
+.code-edit {
+  position: relative;
+  height: 52vh; max-height: 560px; min-height: 260px;
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--surface-soft);
+}
+.code-edit > pre,
+.code-edit > textarea {
+  margin: 0; padding: 12px 14px; box-sizing: border-box;
+  width: 100%; height: 100%;
+  font: 13px/1.55 "Share Tech Mono", ui-monospace, "SFMono-Regular", monospace;
+  white-space: pre; overflow: auto; tab-size: 2; border: 0;
+}
+.code-hl { position: absolute; inset: 0; pointer-events: none; color: var(--text); }
+.code-edit > textarea {
+  position: absolute; inset: 0; resize: none;
+  color: transparent; background: transparent; caret-color: var(--accent);
+  outline: none;
+}
+.code-edit > textarea::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+/* token colours — chosen to read on both the warm-dark and warm-light grounds */
+.y-k  { color: var(--accent); }
+.y-s  { color: #4c9a5a; }
+.y-n  { color: #c1791f; }
+.y-b  { color: #a463c9; }
+.y-c, .y-d { color: var(--muted); }
+.y-cm { color: var(--muted); font-style: italic; }

@@ -338,7 +338,7 @@
   }
 
   /* ============================ SETTINGS ============================ */
-  const SECTIONS = ["Location", "Alerts", "System", "Network", "Updates", "Account", "About"];
+  const SECTIONS = ["Location", "Alerts", "System", "Network", "Updates", "Config", "Account", "About"];
   function buildSettingsNav() {
     const nav = $("settings-nav"); nav.innerHTML = "";
     SECTIONS.forEach((name, i) => {
@@ -369,6 +369,7 @@
     else if (name === "System") renderSystem(c);
     else if (name === "Network") renderNetwork(c);
     else if (name === "Updates") renderUpdates(c);
+    else if (name === "Config") renderConfig(c);
     else if (name === "Account") renderAccount(c);
     else if (name === "About") renderAbout(c);
   }
@@ -429,12 +430,9 @@
         const { token } = await (await fetch("/api/push/reg-token", { method: "POST" })).json();
         let url, base;
         if (pushStatus.public_url) {
-          // Registration via the relay (notify.dronedingo.com.au): carries the
-          // node id and the appliance's VAPID key so the phone subscribes to us.
           base = pushStatus.public_url.replace(/\/$/, "");
           url = `${base}/?node=${encodeURIComponent(pushStatus.node)}&t=${token}&k=${pushStatus.pubkey}`;
         } else {
-          // Appliance-hosted PWA (needs the appliance itself on https).
           base = location.origin;
           url = `${base}/push?t=${token}`;
         }
@@ -442,7 +440,9 @@
         if (window.DDQR) $("push-qr").innerHTML = window.DDQR.svg(url, 134);
         $("push-qr-wrap").hidden = false;
         if (!/^https:/.test(base) && !/^http:\/\/localhost/.test(base))
-          setNote("push-note", "Phones need an https:// address — set push.public_url / relay_url in config.", false);
+          setNote("push-note", "This appliance can't reach the registration service — check its internet connection.", false);
+        else if (pushStatus.relay_ready === false)
+          setNote("push-note", "Registration will open, but this appliance isn't fully provisioned to receive devices yet.", false);
       } catch (_) { setNote("push-note", "Could not create a registration link.", false); }
     };
     $("push-test").onclick = async () => {
@@ -456,7 +456,12 @@
   async function renderSystem(c) {
     c.innerHTML = `<div id="sys-body"><p style="color:var(--muted)">Loading…</p></div>
       <div class="form-actions"><button id="sys-refresh">Refresh</button><button id="sys-reboot">Reboot</button></div>
-      <p id="sys-note" class="status-note"></p>`;
+      <p id="sys-note" class="status-note"></p>
+      <hr style="border:0;border-top:1px solid var(--line);margin:22px 0 16px">
+      <h3>Demo mode</h3>
+      <p style="color:var(--muted);font-size:13px">Generate synthetic drone traffic — including an unidentified contact — to explore the console and test alerts &amp; push notifications without radios attached. Off by default on real installs.</p>
+      <label class="check-field"><input type="checkbox" id="demo-toggle"> Enable demo traffic</label>
+      <p id="demo-note" class="status-note"></p>`;
     const load = async () => {
       const s = await (await fetch("/api/system/status")).json();
       const bar = (label, pct, val) => `<div class="health-row"><strong>${label}</strong><progress value="${Math.round(pct || 0)}" max="100"></progress><span>${val}</span></div>`;
@@ -481,6 +486,15 @@
     $("sys-reboot").onclick = async () => {
       if (!confirm("Reboot the appliance now? Detection stops for ~1 minute.")) return;
       await fetch("/api/system/reboot", { method: "POST" }); setNote("sys-note", "Rebooting…", true);
+    };
+    // Demo mode
+    try { $("demo-toggle").checked = !!(await (await fetch("/api/demo")).json()).enabled; } catch (_) {}
+    $("demo-toggle").onchange = async (e) => {
+      const on = e.target.checked;
+      setNote("demo-note", on ? "Starting demo traffic…" : "Stopping demo traffic…", true);
+      const r = await (await fetch("/api/demo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled: on }) })).json();
+      e.target.checked = !!r.enabled;
+      setNote("demo-note", r.enabled ? "Demo traffic on — synthetic contacts will appear." : "Demo traffic off.", true);
     };
   }
 
@@ -578,6 +592,83 @@
       } catch (_) {
         $("os-upd").textContent = "Firmware update interrupted — the appliance may be restarting.";
       } finally { $("os-bar").hidden = true; }
+    };
+  }
+
+  // --- Config editor (raw YAML, self-contained syntax highlight) ---
+  function hlValue(E, v) {
+    if (v === "") return "";
+    const t = v.trim(), lead = v.slice(0, v.length - v.trimStart().length);
+    let cls = "";
+    if (/^(true|false|null|~|yes|no)$/i.test(t)) cls = "y-b";
+    else if (/^-?\d+(\.\d+)?$/.test(t)) cls = "y-n";
+    else if (/^(".*"|'.*')$/.test(t)) cls = "y-s";
+    return cls ? E(lead) + `<span class="${cls}">${E(t)}</span>` : E(v);
+  }
+  function yamlHighlight(src) {
+    const E = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    const out = [];
+    for (const raw of src.split("\n")) {
+      // Peel a trailing #comment that isn't inside quotes.
+      let code = raw, comment = "", inS = false, inD = false;
+      for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch === "'" && !inD) inS = !inS;
+        else if (ch === '"' && !inS) inD = !inD;
+        else if (ch === "#" && !inS && !inD && (i === 0 || /\s/.test(raw[i - 1]))) {
+          code = raw.slice(0, i); comment = raw.slice(i); break;
+        }
+      }
+      let html;
+      const m = code.match(/^(\s*)(- )?([^:\s#][^:]*?)(:)(\s|$)(.*)$/);
+      if (m) {
+        html = E(m[1]) + (m[2] ? `<span class="y-d">${E(m[2])}</span>` : "")
+             + `<span class="y-k">${E(m[3])}</span><span class="y-c">:</span>`
+             + m[5] + hlValue(E, m[6]);
+      } else {
+        const dm = code.match(/^(\s*)(- )(.*)$/);
+        html = dm ? E(dm[1]) + `<span class="y-d">${E(dm[2])}</span>` + hlValue(E, dm[3])
+                  : hlValue(E, code);
+      }
+      if (comment) html += `<span class="y-cm">${E(comment)}</span>`;
+      out.push(html);
+    }
+    return out.join("\n");
+  }
+  async function renderConfig(c) {
+    c.innerHTML = `<p>Direct editor for <code>config/dronedingo.yaml</code>. Saving validates the YAML and backs the old file up to <code>.yaml.bak</code>. Alert settings apply on save; source, server and port changes take effect after <b>Restart service</b>.</p>
+      <div class="code-edit"><pre class="code-hl" id="cfg-hl" aria-hidden="true"></pre><textarea id="cfg-text" spellcheck="false" autocomplete="off" autocapitalize="off" wrap="off"></textarea></div>
+      <div class="form-actions"><button class="primary" id="cfg-save">Save</button><button id="cfg-reload">Reload</button><button id="cfg-restart">Restart service</button></div>
+      <p id="cfg-note" class="status-note"></p>`;
+    const ta = $("cfg-text"), hl = $("cfg-hl");
+    const paint = () => { hl.innerHTML = yamlHighlight(ta.value) + "\n"; };
+    const sync = () => { hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; };
+    ta.addEventListener("input", paint);
+    ta.addEventListener("scroll", sync);
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const s = ta.selectionStart, en = ta.selectionEnd;
+        ta.value = ta.value.slice(0, s) + "  " + ta.value.slice(en);
+        ta.selectionStart = ta.selectionEnd = s + 2; paint();
+      }
+    });
+    const load = async () => {
+      const r = await (await fetch("/api/config/raw")).json();
+      ta.value = r.text || ""; paint(); sync();
+    };
+    await load().catch(() => setNote("cfg-note", "Could not load the config.", false));
+    $("cfg-reload").onclick = () => load();
+    $("cfg-save").onclick = async () => {
+      setNote("cfg-note", "Saving…", true);
+      const r = await (await fetch("/api/config/raw", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: ta.value }) })).json();
+      setNote("cfg-note", r.ok ? (r.message || "Saved.") : (r.error || "Save failed."), r.ok);
+    };
+    $("cfg-restart").onclick = async () => {
+      if (!confirm("Restart DroneDingo now? The dashboard will reconnect in a few seconds.")) return;
+      setNote("cfg-note", "Restarting the service…", true);
+      try { await fetch("/api/system/restart", { method: "POST" }); } catch (_) {}
+      setTimeout(() => location.reload(), 6000);
     };
   }
 

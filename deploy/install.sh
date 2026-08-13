@@ -167,6 +167,19 @@ else
   step "  • No credentials given — you'll set the admin login on first web visit."
 fi
 
+# Provision the push relay shared key (out-of-band; never written to the
+# user-facing config). Set DRONEDINGO_RELAY_KEY to let this appliance collect
+# the phone registrations parked for it. Stored in data/state.json.
+if [[ -n "${DRONEDINGO_RELAY_KEY:-}" ]]; then
+  DD_RK="$DRONEDINGO_RELAY_KEY" DD_APP="$APP_DIR" "$APP_DIR/.venv/bin/python" - >>"$LOG" 2>&1 <<'PYEOF'
+import os, sys
+sys.path.insert(0, os.path.join(os.environ["DD_APP"], "backend"))
+from app import config
+config.update_state(relay_key=os.environ["DD_RK"])
+PYEOF
+  step "  • Push relay key provisioned."
+fi
+
 step "Detecting attached hardware…"
 enable_src() { run "$APP_DIR/.venv/bin/python" -c \
   "import sys; sys.path.insert(0,'$APP_DIR/backend'); from app import config; config.set_source_enabled('$1', True)"; }

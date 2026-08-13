@@ -47,7 +47,10 @@ map:
 sources:
   # ---- Identity + position (2.4/5.8 GHz Remote ID & DJI DroneID) ----------
   simulator:
-    enabled: true             # synthetic traffic so the UI runs with no radios
+    # Synthetic traffic for demos/testing. OFF by default so a fresh install
+    # shows only real contacts; turn it on any time from Settings → System →
+    # "Demo mode" (persists), or set true here.
+    enabled: false
   wifi_remoteid:
     enabled: false
     interface: "wlan1"        # must support monitor mode
@@ -86,25 +89,14 @@ alerts:
 
 push:
   # DroneDingo Push — proprietary, appliance-direct, end-to-end encrypted phone
-  # alerts (Web Push). No ntfy, no app store, no Apple/Google developer account.
+  # alerts (Web Push). No third-party app, no Apple/Google developer account.
   # The VAPID key pair is generated on first run and kept in data/state.json.
+  # Register phones from the dashboard (Settings → Alerts → Add a phone).
   enabled: true
   subject: "mailto:admin@dronedingo.com.au"   # VAPID contact (per RFC 8292)
   # Tapping an alert opens this dashboard URL (deep-linked to the operator's
   # location + aircraft). Set it to the dashboard's public https address.
   portal_url: "https://dronedingo.davidmgilbert.com"
-  # Base URL a phone uses to open the registration PWA. Web Push REQUIRES HTTPS,
-  # so this must be an https:// origin the phone trusts (the appliance's own
-  # https address, or your hosted alerts site). If null, the QR uses whatever
-  # origin the dashboard is open on — which only works if that is https.
-  public_url: null
-
-  # notify.dronedingo.com.au relay (see notify-site/). When set, the QR points
-  # phones at the relay and the appliance polls it for their subscriptions, then
-  # sends push DIRECTLY — detection data never touches the relay. Usually the
-  # same host as public_url. relay_key is the shared secret set on the relay.
-  relay_url: null            # e.g. "https://notify.dronedingo.com.au"
-  relay_key: null            # shared secret matching the relay's RELAY_KEY
 
 updates:
   # Production appliances update from the website (see docs/UPDATE_PROTOCOL.md).
