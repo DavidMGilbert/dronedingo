@@ -49,18 +49,38 @@ _lock = threading.RLock()
 # DNS/SSL. The shared key is provisioned out-of-band (env / install / build),
 # never written to config/dronedingo.yaml.
 DEFAULT_RELAY_URL = "https://notify.dronedingo.com.au"
-DEFAULT_RELAY_KEY = ""        # set at build/provisioning; or DRONEDINGO_RELAY_KEY
+# Firmware bootstrap secret used ONLY to enroll (claim a node + register this
+# appliance's own unique key). It never grants access to any node's parked
+# registrations. Provisioned out-of-band; must match the relay's
+# DRONEDINGO_ENROLL_SECRET. The per-appliance relay key is generated on first
+# boot (ensure_relay_key) — it is never shared and never written to config.
+DEFAULT_ENROLL_SECRET = ""
+
+
+def _enroll_secret() -> str:
+    return (os.environ.get("DRONEDINGO_ENROLL_SECRET")
+            or cfg.get_state().get("enroll_secret") or DEFAULT_ENROLL_SECRET)
+
+
+def ensure_relay_key() -> str:
+    """This appliance's UNIQUE relay key. Minted once on first boot and persisted
+    to state.json, so every appliance authenticates as itself."""
+    st = cfg.get_state()
+    k = os.environ.get("DRONEDINGO_RELAY_KEY") or st.get("relay_key")
+    if k:
+        return k
+    k = secrets.token_urlsafe(32)
+    cfg.update_state(relay_key=k)
+    return k
 
 
 def _relay() -> tuple[str, str]:
-    """(base_url, shared_key) for the registration relay. Resolved from firmware
-    defaults + out-of-band provisioning only — not from user-facing config."""
+    """(base_url, this appliance's key) for the registration relay. Resolved from
+    firmware defaults + per-appliance state only — never from user-facing config."""
     p = cfg.load().get("push") or {}
     base = (p.get("relay_url") or DEFAULT_RELAY_URL).rstrip("/")
-    key = (os.environ.get("DRONEDINGO_RELAY_KEY")
-           or (cfg.get_state().get("relay_key") if hasattr(cfg, "get_state") else "")
-           or p.get("relay_key") or DEFAULT_RELAY_KEY)
-    return base, (key or "")
+    key = os.environ.get("DRONEDINGO_RELAY_KEY") or cfg.get_state().get("relay_key") or ""
+    return base, key
 
 
 def registration_base() -> str:
@@ -69,9 +89,10 @@ def registration_base() -> str:
 
 
 def relay_configured() -> bool:
-    """True once the shared key is provisioned, so the appliance can collect
-    parked registrations. The QR is valid without it; collection needs it."""
-    return bool(_relay()[1])
+    """True once this appliance has successfully enrolled on the relay, so its
+    parked registrations can be collected. The QR is valid before then; only
+    collection needs enrollment."""
+    return bool(cfg.get_state().get("relay_enrolled"))
 
 
 # --------------------------------------------------------------------------
@@ -368,7 +389,7 @@ def poll_relay_once() -> int:
         except Exception:
             pass
     try:
-        _relay_post("/api/ack.php", {"key": key, "ids": ack_ids})
+        _relay_post("/api/ack.php", {"node": node, "key": key, "ids": ack_ids})
     except Exception as exc:
         log.debug("relay ack failed: %s", exc)
 
@@ -383,6 +404,39 @@ def poll_relay_once() -> int:
     return len(welcomed)
 
 
+def enroll() -> dict:
+    """Self-enroll on the relay: claim this appliance's node id and register a
+    hash of its unique key, so only this appliance can collect its own parked
+    registrations. Idempotent — safe to call on every boot."""
+    secret = _enroll_secret()
+    if not secret:
+        log.info("enrollment secret not provisioned; skipping relay enrollment")
+        return {"ok": False, "error": "no enroll secret"}
+    node, key = cfg.get_node_id(), ensure_relay_key()
+    try:
+        res = _relay_post("/api/enroll.php",
+                          {"node": node, "key": key, "secret": secret})
+    except Exception as exc:
+        log.warning("relay enrollment failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+    if res.get("ok"):
+        cfg.update_state(relay_enrolled=True)
+        log.info("relay enrollment %s (node %s)", res.get("status", "ok"), node)
+    else:
+        cfg.update_state(relay_enrolled=False)
+        log.warning("relay enrollment rejected: %s", res.get("error"))
+    return res
+
+
+def provision_and_start() -> None:
+    """First-boot provisioning then poll: mint a unique node id + key, enroll on
+    the relay, and start collecting registrations."""
+    cfg.ensure_node_id()
+    ensure_relay_key()
+    enroll()
+    start_poller()
+
+
 _poller_stop: threading.Event | None = None
 
 
@@ -395,10 +449,9 @@ def start_poller() -> None:
         _poller_stop.set()
         _poller_stop = None
 
-    base, key = _relay()
-    if not (base and key):
-        log.info("DroneDingo Push relay key not provisioned; devices can register "
-                 "but won't be collected until it is set")
+    if not _enroll_secret():
+        log.info("relay enroll secret not provisioned; devices can register but "
+                 "won't be collected until it is set")
         return
 
     stop = threading.Event()
@@ -407,7 +460,10 @@ def start_poller() -> None:
     def _loop():
         while not stop.is_set():
             try:
-                poll_relay_once()
+                if not cfg.get_state().get("relay_enrolled"):
+                    enroll()              # keep trying until the relay accepts us
+                if cfg.get_state().get("relay_enrolled"):
+                    poll_relay_once()
             except Exception as exc:
                 log.warning("relay poller error: %s", exc)
             stop.wait(20)

@@ -8,6 +8,7 @@ lose its comments.
 from __future__ import annotations
 import json
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +83,25 @@ def get_home() -> dict[str, Any]:
 
 
 def get_node_id() -> str:
-    return load()["site"]["node_id"]
+    """This appliance's unique node id. Prefers the one minted on first boot
+    (state.json); falls back to the config value."""
+    state = _load_state()
+    return state.get("node_id") or load()["site"]["node_id"]
+
+
+def ensure_node_id() -> str:
+    """Guarantee a globally-unique, stable node id. Appliances ship with the
+    same config, so on first boot we mint a random id and persist it — unless an
+    operator has set a real (non-default) node_id in the YAML, which we respect."""
+    state = _load_state()
+    if state.get("node_id"):
+        return state["node_id"]
+    cfg_nid = (_load_yaml().get("site") or {}).get("node_id")
+    if cfg_nid and cfg_nid not in ("dingo-01", "", None):
+        return cfg_nid                     # operator chose an explicit id
+    nid = "dd-" + uuid.uuid4().hex[:16]
+    update_state(node_id=nid)
+    return nid
 
 
 def set_home(lat: float, lon: float, label: str | None = None) -> dict[str, Any]:
@@ -124,31 +143,3 @@ def set_source_enabled(name: str, enabled: bool) -> None:
         se[name] = bool(enabled)
         with open(STATE_PATH, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
-
-
-# --------------------------------------------------------------------------
-# raw YAML editing (Settings → Config)
-# --------------------------------------------------------------------------
-def read_yaml_text() -> str:
-    """The exact contents of config/dronedingo.yaml, for the Config editor."""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return f.read()
-
-
-def write_yaml_text(text: str) -> None:
-    """Validate that ``text`` is parseable YAML with a top-level mapping, back up
-    the current file to .bak, then write it. Raises ValueError on bad YAML so the
-    editor can show the parser error and nothing is overwritten with junk."""
-    try:
-        parsed = yaml.safe_load(text)
-    except yaml.YAMLError as exc:
-        raise ValueError(f"YAML error: {exc}")
-    if not isinstance(parsed, dict):
-        raise ValueError("Top level must be a mapping (key: value pairs).")
-    with _lock:
-        if CONFIG_PATH.exists():
-            backup = CONFIG_PATH.with_suffix(".yaml.bak")
-            backup.write_text(CONFIG_PATH.read_text(encoding="utf-8"),
-                              encoding="utf-8")
-        # Normalise line endings; keep the author's text otherwise verbatim.
-        CONFIG_PATH.write_text(text.replace("\r\n", "\n"), encoding="utf-8")

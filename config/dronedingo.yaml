@@ -17,7 +17,9 @@ brand:
   danger: "#E5484D"          # proximity breach / threat state
 
 site:
-  node_id: "dingo-01"        # unique id for this receiver node
+  # Leave as "dingo-01": each appliance mints its own unique node id on first
+  # boot (stored in data/state.json). Set a specific value only to pin one.
+  node_id: "dingo-01"
   home:
     label: "Home Base"
     lat: 52.2405              # default map centre; override from the UI

@@ -167,17 +167,19 @@ else
   step "  • No credentials given — you'll set the admin login on first web visit."
 fi
 
-# Provision the push relay shared key (out-of-band; never written to the
-# user-facing config). Set DRONEDINGO_RELAY_KEY to let this appliance collect
-# the phone registrations parked for it. Stored in data/state.json.
-if [[ -n "${DRONEDINGO_RELAY_KEY:-}" ]]; then
-  DD_RK="$DRONEDINGO_RELAY_KEY" DD_APP="$APP_DIR" "$APP_DIR/.venv/bin/python" - >>"$LOG" 2>&1 <<'PYEOF'
+# Provision the push-relay ENROLLMENT secret (out-of-band; never written to the
+# user-facing config). This lets the appliance self-enroll on the relay on first
+# boot — it mints its own unique node id + key and registers them. The secret
+# only authorises enrollment, never access to any node's data. Stored in
+# data/state.json. Set DRONEDINGO_ENROLL_SECRET to match the relay's value.
+if [[ -n "${DRONEDINGO_ENROLL_SECRET:-}" ]]; then
+  DD_ES="$DRONEDINGO_ENROLL_SECRET" DD_APP="$APP_DIR" "$APP_DIR/.venv/bin/python" - >>"$LOG" 2>&1 <<'PYEOF'
 import os, sys
 sys.path.insert(0, os.path.join(os.environ["DD_APP"], "backend"))
 from app import config
-config.update_state(relay_key=os.environ["DD_RK"])
+config.update_state(enroll_secret=os.environ["DD_ES"])
 PYEOF
-  step "  • Push relay key provisioned."
+  step "  • Push relay enrollment secret provisioned."
 fi
 
 step "Detecting attached hardware…"

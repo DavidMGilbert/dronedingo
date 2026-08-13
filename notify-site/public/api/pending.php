@@ -8,14 +8,14 @@ $b = json_body();
 $node = trim((string)($b['node'] ?? $_GET['node'] ?? ''));
 $key = (string)($b['key'] ?? $_GET['key'] ?? '');
 
-if (!hash_equals(relay_key(), $key)) {
-    out(['ok' => false, 'error' => 'unauthorized'], 401);
-}
 if ($node === '') {
     out(['ok' => false, 'error' => 'node required'], 400);
 }
 
 $pdo = db();
+if (!node_authorized($pdo, $node, $key)) {
+    out(['ok' => false, 'error' => 'unauthorized'], 401);
+}
 $st = $pdo->prepare('SELECT id, token, subscription FROM pending WHERE node = ? ORDER BY id LIMIT 100');
 $st->execute([$node]);
 $rows = array_map(fn($r) => [

@@ -16,7 +16,42 @@ function db(): PDO {
         subscription TEXT NOT NULL,
         created INTEGER NOT NULL)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_pending_node ON pending(node)');
+    // One row per enrolled appliance. Each holds only a HASH of that
+    // appliance's unique key, so a database leak never yields usable keys.
+    $pdo->exec('CREATE TABLE IF NOT EXISTS appliances (
+        node TEXT PRIMARY KEY,
+        key_hash TEXT NOT NULL,
+        created INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL)');
     return $pdo;
+}
+
+/**
+ * Authorise an appliance for a node. Each appliance may only touch its own
+ * mailbox: the presented key must match the hash stored at enrollment.
+ *
+ * Migration grace: if the node has never enrolled AND a legacy global relay
+ * key is still configured, accept that instead — so a fleet can roll over to
+ * per-node keys without a flag day. Once a node enrolls, only its own key works.
+ */
+function node_authorized(PDO $pdo, string $node, string $key): bool {
+    if ($node === '' || $key === '') {
+        return false;
+    }
+    $st = $pdo->prepare('SELECT key_hash FROM appliances WHERE node = ?');
+    $st->execute([$node]);
+    $hash = $st->fetchColumn();
+    if ($hash !== false) {
+        if (password_verify($key, $hash)) {
+            $pdo->prepare('UPDATE appliances SET last_seen = ? WHERE node = ?')
+                ->execute([time(), $node]);
+            return true;
+        }
+        return false;
+    }
+    // Not enrolled yet — allow the legacy shared key during rollout, if set.
+    $legacy = relay_key();
+    return $legacy !== '' && hash_equals($legacy, $key);
 }
 
 function json_body(): array {

@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     await db.init()
     _open_basemap()
     push.ensure_keys()          # generate the VAPID key pair on first run
-    push.start_poller()         # collect device registrations from the relay
+    push.provision_and_start()  # mint unique id/key, enroll, then collect regs
     await manager.start()
     prune_task = asyncio.create_task(_prune_loop())
     log.info("DroneDingo online — UI at http://%s:%s",
@@ -411,13 +411,6 @@ async def api_system_reboot():
     return await asyncio.to_thread(system.reboot)
 
 
-@app.post("/api/system/restart")
-async def api_system_restart():
-    """Restart just the DroneDingo service (applies config changes without a
-    full reboot). The HTTP response is sent before the service goes down."""
-    return await asyncio.to_thread(system.restart_service)
-
-
 # ----------------------------- Demo mode -----------------------------------
 @app.get("/api/demo")
 async def api_demo_status():
@@ -434,25 +427,6 @@ async def api_demo_set(payload: dict):
     else:
         manager.stop_source("simulator")
     return {"ok": True, "enabled": manager.source_running("simulator")}
-
-
-# ----------------------------- Config editor -------------------------------
-@app.get("/api/config/raw")
-async def api_config_raw():
-    return {"text": cfg.read_yaml_text()}
-
-
-@app.post("/api/config/raw")
-async def api_config_raw_save(payload: dict):
-    """Validate + save the raw dronedingo.yaml (backs up to .yaml.bak first).
-    Alert/behaviour changes apply immediately; source/server changes need the
-    Restart button."""
-    try:
-        cfg.write_yaml_text(payload.get("text", ""))
-    except ValueError as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-    manager.reload_alerter()
-    return {"ok": True, "message": "Saved. Restart to apply source/server changes."}
 
 
 # ----------------------------- Updates -------------------------------------
