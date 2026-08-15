@@ -113,17 +113,33 @@ ensure_networkmanager
 step "Placing application in $APP_DIR…"
 id -u "$SERVICE_USER" &>/dev/null || run useradd -r -m -s /usr/sbin/nologin "$SERVICE_USER"
 mkdir -p "$APP_DIR"
+
+# Copy application code while preserving all device-owned runtime state. This
+# makes rerunning the installer a safe repair/update operation: detections,
+# credentials, installed map packs and the operator's live YAML survive.
+sync_app_tree() {
+  local source="$1"
+  run rsync -a \
+    --exclude .git --exclude .venv --exclude data \
+    --exclude config/dronedingo.yaml \
+    "$source"/ "$APP_DIR"/
+  if [[ ! -f "$APP_DIR/config/dronedingo.yaml" ]]; then
+    mkdir -p "$APP_DIR/config"
+    run cp "$source/config/dronedingo.yaml" "$APP_DIR/config/dronedingo.yaml"
+  fi
+}
+
 # If piped from curl (no local repo), clone; otherwise copy the working tree.
 # ${BASH_SOURCE[0]:-} is empty when the script has no on-disk path (piped/stdin),
 # which must not trip `set -u`; an empty SRC_DIR just selects the clone branch.
 SELF="${BASH_SOURCE[0]:-}"
 SRC_DIR="$([[ -n "$SELF" ]] && cd "$(dirname "$SELF")/.." 2>/dev/null && pwd || true)"
 if [[ -n "$SRC_DIR" && -f "$SRC_DIR/backend/requirements.txt" ]]; then
-  run rsync -a --exclude .git --exclude .venv --exclude data "$SRC_DIR"/ "$APP_DIR"/
+  sync_app_tree "$SRC_DIR"
 else
   rm -rf "$APP_DIR/.src"
   run git clone --depth 1 "$REPO_URL" "$APP_DIR/.src"
-  run rsync -a --exclude .git --exclude .venv --exclude data "$APP_DIR/.src"/ "$APP_DIR"/
+  sync_app_tree "$APP_DIR/.src"
   rm -rf "$APP_DIR/.src"
 fi
 

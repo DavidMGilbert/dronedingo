@@ -76,6 +76,11 @@ curl -fsSL https://raw.githubusercontent.com/DavidMGilbert/dronedingo/main/deplo
 Or from a clone: `sudo bash deploy/install.sh`. When it finishes, open the
 dashboard URL it prints.
 
+Rerunning the installer from a fresh checkout is also a supported repair/update
+path. It preserves `data/` (detections, credentials and offline map packs) and
+the device's existing `config/dronedingo.yaml`, then refreshes the application,
+dependencies and service definition.
+
 Enable the Remote ID radios you have, then `sudo systemctl restart dronedingo`:
 
 ```bash
@@ -145,7 +150,8 @@ Everything lives in [`config/dronedingo.yaml`](config/dronedingo.yaml):
 - [x] In-UI updates (DroneDingo + OS)
 - [ ] Multi-node fusion (triangulate non-GPS RF hits across sensors)
 - [ ] Acoustic night-time detector
-- [ ] Offline vector basemap bundle
+- [x] Owner-installable offline map packs (persistent MBTiles/PMTiles)
+- [ ] Optional preloaded Australian regional map-pack catalogue
 
 ## Licensing
 

@@ -456,7 +456,7 @@
   }
 
   /* ============================ SETTINGS ============================ */
-  const SECTIONS = ["Location", "Alerts", "System", "Network", "Updates", "Account", "About"];
+  const SECTIONS = ["Location", "Maps", "Alerts", "System", "Network", "Updates", "Account", "About"];
   function buildSettingsNav() {
     const nav = $("settings-nav"); nav.innerHTML = "";
     SECTIONS.forEach((name, i) => {
@@ -483,12 +483,63 @@
       $("set-save").onclick = saveHome;
       $("set-pick").onclick = () => { state.pickingHome = true; closeModals(); };
     }
+    else if (name === "Maps") renderMaps(c);
     else if (name === "Alerts") renderAlerts(c);
     else if (name === "System") renderSystem(c);
     else if (name === "Network") renderNetwork(c);
     else if (name === "Updates") renderUpdates(c);
     else if (name === "Account") renderAccount(c);
     else if (name === "About") renderAbout(c);
+  }
+
+  const bytes = (n) => {
+    if (!Number.isFinite(Number(n))) return "-";
+    const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0, v = Number(n);
+    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+    return `${v.toFixed(i > 1 ? 1 : 0)} ${u[i]}`;
+  };
+
+  async function renderMaps(c) {
+    c.innerHTML = `<h3>Offline maps</h3>
+      <p>Keep the live map available without an internet connection. Map packs are stored on this device, survive software updates and never leave it.</p>
+      <div id="map-packs"><p style="color:var(--muted)">Checking installed maps...</p></div>
+      <h3>Install a map pack</h3>
+      <p style="font-size:13px">Choose a licensed regional <b>.pmtiles</b> or <b>.mbtiles</b> file. It is validated and activated after upload.</p>
+      <label class="field">Map pack<input id="map-file" type="file" accept=".pmtiles,.mbtiles"></label>
+      <label class="field">Vector schema<select id="map-schema"><option value="protomaps">Protomaps</option><option value="openmaptiles">OpenMapTiles</option></select></label>
+      <progress id="map-progress" max="100" value="0" hidden></progress>
+      <div class="form-actions"><button id="map-online">Use online map</button><button class="primary" id="map-upload">Install map pack</button></div>
+      <p id="map-note" class="status-note"></p>`;
+    const load = async () => {
+      const data = await fetch("/api/map/packs").then(r => r.json());
+      const rows = (data.packs || []).map(p => `<div class="map-pack ${p.active ? "active" : ""}">
+        <div><strong>${esc(p.title || p.name)}</strong><small>${esc(p.name)} &middot; ${bytes(p.size)}${p.error ? " &middot; Invalid" : ` &middot; z${p.minzoom}-${p.maxzoom} &middot; ${p.vector ? "vector" : "raster"}`}</small></div>
+        <div>${p.active ? '<span class="map-active">Active</span>' : `<button data-activate="${esc(p.name)}">Use</button><button data-delete="${esc(p.name)}">Remove</button>`}</div></div>`).join("");
+      $("map-packs").innerHTML = rows || '<p style="color:var(--muted)">No offline map packs installed.</p>';
+      $("map-packs").insertAdjacentHTML("beforeend", `<p class="map-space">Free storage: ${bytes(data.free_bytes)}</p>`);
+      $("map-packs").querySelectorAll("[data-activate]").forEach(b => b.onclick = async () => {
+        const r = await fetch(`/api/map/packs/${encodeURIComponent(b.dataset.activate)}/activate`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({schema:$("map-schema").value}) });
+        const j = await r.json(); if (!r.ok) return setNote("map-note", j.error || "Could not activate map.", false);
+        location.reload();
+      });
+      $("map-packs").querySelectorAll("[data-delete]").forEach(b => b.onclick = async () => {
+        if (!confirm(`Remove ${b.dataset.delete}?`)) return;
+        const r = await fetch(`/api/map/packs/${encodeURIComponent(b.dataset.delete)}`, {method:"DELETE"});
+        const j = await r.json(); setNote("map-note", j.ok ? "Map pack removed." : j.error, j.ok); if (j.ok) load();
+      });
+    };
+    load().catch(() => setNote("map-note", "Could not read map storage.", false));
+    $("map-online").onclick = async () => { await fetch("/api/map/online", {method:"POST"}); location.reload(); };
+    $("map-upload").onclick = () => {
+      const file = $("map-file").files[0];
+      if (!file) return setNote("map-note", "Choose a map pack first.", false);
+      const xhr = new XMLHttpRequest(), bar = $("map-progress");
+      xhr.open("POST", `/api/map/packs/upload?filename=${encodeURIComponent(file.name)}&schema=${encodeURIComponent($("map-schema").value)}`);
+      xhr.upload.onprogress = e => { bar.hidden = false; if (e.lengthComputable) bar.value = e.loaded / e.total * 100; };
+      xhr.onload = () => { let j={}; try { j=JSON.parse(xhr.responseText); } catch(_){} if (xhr.status < 300) location.reload(); else { bar.hidden=true; setNote("map-note", j.error || "Upload failed.", false); } };
+      xhr.onerror = () => { bar.hidden=true; setNote("map-note", "Upload interrupted.", false); };
+      setNote("map-note", `Installing ${file.name}...`, true); xhr.send(file);
+    };
   }
 
   async function renderAlerts(c) {
