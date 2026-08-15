@@ -99,12 +99,15 @@ class MBTilesStore:
     def __init__(self, path: Path) -> None:
         self.path = str(path)
         self._meta: dict[str, str] = {}
-        with sqlite3.connect(f"file:{self.path}?mode=ro", uri=True) as db:
+        db = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
+        try:
             try:
                 self._meta = {k: v for k, v in
                               db.execute("SELECT name, value FROM metadata")}
             except sqlite3.Error:
                 self._meta = {}
+        finally:
+            db.close()
 
     @property
     def tile_format(self) -> str:
@@ -125,10 +128,13 @@ class MBTilesStore:
     def get(self, z: int, x: int, y: int) -> Optional[bytes]:
         # MBTiles stores rows in TMS order (y flipped relative to XYZ).
         flipped = (1 << z) - 1 - y
-        with sqlite3.connect(f"file:{self.path}?mode=ro", uri=True) as db:
+        db = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)
+        try:
             row = db.execute(
                 "SELECT tile_data FROM tiles WHERE zoom_level=? AND "
                 "tile_column=? AND tile_row=?", (z, x, flipped)).fetchone()
+        finally:
+            db.close()
         if not row:
             return None
         data = row[0]

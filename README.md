@@ -145,7 +145,8 @@ Everything lives in [`config/dronedingo.yaml`](config/dronedingo.yaml):
 - [x] In-UI updates (DroneDingo + OS)
 - [ ] Multi-node fusion (triangulate non-GPS RF hits across sensors)
 - [ ] Acoustic night-time detector
-- [ ] Offline vector basemap bundle
+- [x] Owner-installable offline map packs (persistent MBTiles/PMTiles)
+- [ ] Optional preloaded Australian regional map-pack catalogue
 
 ## Licensing
 

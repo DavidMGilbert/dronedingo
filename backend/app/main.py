@@ -18,7 +18,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from . import net          # noqa: F401 — pins the certifi CA bundle for HTTPS
 from . import config as cfg
-from . import auth, system, updater, push, tunnel
+from . import auth, system, updater, push, tunnel, basemaps
 from .db import DB
 from .hub import Hub
 from .manager import Manager
@@ -55,6 +55,13 @@ def _open_basemap() -> None:
         # A missing basemap must not stop the appliance — fall back online.
         log.warning("offline basemap unavailable (%s); using online tiles", exc)
         tile_store = None
+
+
+def _reload_basemap() -> None:
+    """Apply a changed pack selection without restarting the device."""
+    global tile_store
+    tile_store = None
+    _open_basemap()
 
 
 @contextlib.asynccontextmanager
@@ -253,6 +260,69 @@ async def api_map_info():
         "format": tile_store.tile_format, "vector": tile_store.is_vector,
         "minzoom": tile_store.minzoom, "maxzoom": tile_store.maxzoom,
     }
+
+
+@app.get("/api/map/packs")
+async def api_map_packs():
+    return {"packs": basemaps.list_packs(), "free_bytes": basemaps.free_bytes(),
+            "offline": tile_store is not None}
+
+
+@app.post("/api/map/packs/upload")
+async def api_map_pack_upload(request: Request, filename: str, schema: str = "protomaps"):
+    """Stream a map pack straight to persistent storage, then validate it."""
+    try:
+        name = basemaps.safe_name(filename)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    basemaps.PACK_DIR.mkdir(parents=True, exist_ok=True)
+    temp = basemaps.PACK_DIR / (f".{name}.{time.time_ns()}.uploading")
+    capacity = basemaps.free_bytes() - 256 * 1024 * 1024
+    if capacity <= 0:
+        return JSONResponse({"ok": False, "error": "Not enough free storage to install a map pack."}, status_code=507)
+    written = 0
+    try:
+        with open(temp, "wb") as handle:
+            async for chunk in request.stream():
+                written += len(chunk)
+                if written > capacity:
+                    raise OSError("Not enough free space to safely install this map pack.")
+                handle.write(chunk)
+        if written == 0:
+            raise ValueError("The uploaded map pack is empty.")
+        target, info = basemaps.commit_upload(temp, name)
+        basemaps.activate(target.name, schema)
+        _reload_basemap()
+        return {"ok": True, "pack": info, "active": True}
+    except Exception as exc:
+        temp.unlink(missing_ok=True)
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@app.post("/api/map/packs/{name}/activate")
+async def api_map_pack_activate(name: str, payload: dict | None = None):
+    try:
+        basemaps.activate(name, (payload or {}).get("schema", "protomaps"))
+        _reload_basemap()
+        return {"ok": True}
+    except (ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@app.delete("/api/map/packs/{name}")
+async def api_map_pack_delete(name: str):
+    try:
+        basemaps.remove(name)
+        return {"ok": True}
+    except (ValueError, FileNotFoundError) as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+
+
+@app.post("/api/map/online")
+async def api_map_use_online():
+    basemaps.use_online()
+    _reload_basemap()
+    return {"ok": True}
 
 
 @app.get("/tiles/{z}/{x}/{y}")

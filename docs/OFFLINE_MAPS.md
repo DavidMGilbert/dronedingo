@@ -1,29 +1,32 @@
 # Offline / self-hosted maps
 
-Farms often have poor connectivity. DroneDingo reads its basemap URL from
-`config/dronedingo.yaml` (`map.tile_url`), so switching to offline tiles needs
-**no code changes**.
+Farms often have poor connectivity. DroneDingo can install and serve a regional
+map pack from the device itself. In the console open **Settings > Maps**, choose
+a licensed `.pmtiles` or `.mbtiles` pack and select **Install map pack**. The
+pack is validated, activated immediately and retained across software updates.
+
+Map packs are stored in `data/basemaps/`. They are deliberately separate from
+normal software releases: regional data can be several gigabytes and replacing
+application code must never remove an owner's maps. The online OpenStreetMap
+layer remains available as a reversible fallback.
 
 ## Option A — pre-rendered raster tiles (simplest)
 
-1. Download an `.mbtiles` extract for your county/region (e.g. from a provider
+1. Download an `.mbtiles` extract for your district/region (e.g. from a provider
    whose license permits rebranded/offline use).
-2. Serve it locally on the Pi with a lightweight tile server, e.g.:
-   ```bash
-   pip install mbutil
-   # or run a small tileserver container / go-mbtiles binary
-   ```
-3. Point the config at it:
+2. Install it from **Settings > Maps**, or copy it into `data/basemaps/` and
+   point the config at it:
    ```yaml
    map:
-     tile_url: "http://localhost:8080/{z}/{x}/{y}.png"
+     basemap:
+       path: "data/basemaps/your-region.mbtiles"
    ```
 
 ## Option B — bundled vector tiles (crisper, larger effort)
 
-Use a MapLibre-based front end with a self-hosted style + a `.pmtiles` file
-served from the appliance. This is a later upgrade path; the current UI uses
-Leaflet raster tiles for simplicity and low resource use on the Pi.
+The MapLibre front end can use a `.pmtiles` vector extract served directly by
+DroneDingo. Choose the matching Protomaps or OpenMapTiles schema while
+installing it; the map is then styled from the active DroneDingo theme.
 
 ## Licensing note
 

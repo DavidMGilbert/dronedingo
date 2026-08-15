@@ -156,6 +156,16 @@
 .throttle-note.ok { background: color-mix(in srgb, var(--vfd) 14%, transparent); }
 .throttle-note.warn { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--text); }
 .throttle-note.warn b { color: var(--danger); }
+.map-pack { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  margin:7px 0; padding:11px 12px; border:1px solid var(--line); border-radius:12px;
+  background:var(--surface-soft); }
+.map-pack.active { border-color:color-mix(in srgb, var(--vfd) 55%, var(--line)); }
+.map-pack strong,.map-pack small { display:block; }
+.map-pack small,.map-space { margin-top:3px; color:var(--muted); font-size:11px; }
+.map-pack button { margin-left:6px; padding:7px 10px; border:1px solid var(--line);
+  border-radius:8px; background:var(--surface-soft); color:var(--text); cursor:pointer; }
+.map-active { color:var(--vfd); font:500 12px var(--font-vfd); text-transform:uppercase; }
+#map-progress { width:100%; accent-color:var(--accent); }
 
 /* ---- First-boot setup wizard ---- */
 .wiz-overlay {
